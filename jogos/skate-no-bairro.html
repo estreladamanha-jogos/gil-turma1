@@ -61,7 +61,7 @@
 
   <canvas id="game" width="900" height="500"></canvas>
 
-  <div id="hint">← → trocar de pista · ↑ ou ESPAÇO pular cone · desvie de caçamba, buraco e dominó · você tem 3 vidas, e fica piscando 1s (sem poder se machucar de novo) depois de bater 🛹</div>
+  <div id="hint">← → trocar de pista · ↑ ou ESPAÇO pular cone · desvie de caçamba, buraco e dominó · quando a tela piscar vermelho, uma bigorna vai cair — olha a sombra e troca de pista! 🛹</div>
 
   <div id="overlay">
     <h2 id="overlayTitle">🏁 CHEGOU!</h2>
@@ -75,10 +75,11 @@
    SKATE NO BAIRRO — jogo modelo da Aula 5 (corredor de 3
    pistas, visto de trás). O skatista, o controle, as moedas,
    os obstáculos (cone, buraco, caçamba, dominó), as 3 vidas
-   com 1s de invencibilidade piscando depois de bater, e o
-   objetivo (chegar ao fim da rua) já funcionam. Ainda não tem
-   perseguidor nem níveis — isso a turma constrói nas missões,
-   uma de cada vez, sempre em cima deste código.
+   com 1s de invencibilidade piscando depois de bater, a bigorna
+   que cai do céu (com sombra e tela piscando avisando antes),
+   e o objetivo (chegar ao fim da rua) já funcionam. Ainda não
+   tem perseguidor nem níveis — isso a turma constrói nas
+   missões, uma de cada vez, sempre em cima deste código.
    ========================================================= */
 
 const canvas = document.getElementById('game');
@@ -108,6 +109,14 @@ const INVINCIBLE_TIME = 1;   // segundos piscando, sem poder bater de novo
 let lives = LIVES_START;
 let invincible = false;
 let invincibleTimer = 0;
+
+// ---------- Bigorna (perigo que cai do céu) ----------
+const ANVIL_WARN_TIME = 1.2;   // segundos de aviso (sombra crescendo + tela piscando)
+const ANVIL_FALL_TIME = 0.35;  // segundos caindo, depois do aviso
+const ANVIL_MIN_GAP = 5;       // menor tempo até a próxima bigorna
+const ANVIL_MAX_GAP = 9;       // maior tempo até a próxima bigorna
+let anvil = null;              // { lane, phase: 'warning'|'falling'|'done', timer }
+let anvilCooldown = 3 + Math.random() * 2; // primeira bigorna cai depois de 3-5s
 
 // ---------- Perspectiva ----------
 function sc(d) { return FOCAL / (FOCAL + Math.max(d, -FOCAL*0.6)); }
@@ -225,6 +234,38 @@ function update(dt) {
     }
   }
 
+  // ---------- Bigorna: aviso, queda e impacto ----------
+  if (anvil) {
+    if (anvil.phase === 'warning') {
+      anvil.timer -= dt;
+      if (anvil.timer <= 0) { anvil.phase = 'falling'; anvil.timer = ANVIL_FALL_TIME; }
+    } else if (anvil.phase === 'falling') {
+      anvil.timer -= dt;
+      if (anvil.timer <= 0) {
+        if (!invincible && Math.abs(player.lane - anvil.lane) < 0.6) {
+          lives--;
+          document.getElementById('livesVal').textContent = Math.max(0, lives);
+          if (lives <= 0) { loseGame(); return; }
+          invincible = true;
+          invincibleTimer = INVINCIBLE_TIME;
+        }
+        anvil.phase = 'done';
+        anvil.timer = 0.3; // poeira do impacto some rápido
+      }
+    } else {
+      anvil.timer -= dt;
+      if (anvil.timer <= 0) {
+        anvil = null;
+        anvilCooldown = ANVIL_MIN_GAP + Math.random() * (ANVIL_MAX_GAP - ANVIL_MIN_GAP);
+      }
+    }
+  } else {
+    anvilCooldown -= dt;
+    if (anvilCooldown <= 0) {
+      anvil = { lane: Math.floor(Math.random() * 3), phase: 'warning', timer: ANVIL_WARN_TIME };
+    }
+  }
+
   const pct = Math.min(100, distance / TRACK_LENGTH * 100);
   document.getElementById('progressFill').style.width = pct + '%';
   document.getElementById('progressIcon').style.left = pct + '%';
@@ -253,6 +294,8 @@ function restart() {
   lives = LIVES_START;
   invincible = false;
   invincibleTimer = 0;
+  anvil = null;
+  anvilCooldown = 3 + Math.random() * 2;
   gameOver = false;
   player.lane = player.targetLane = 1;
   player.jumpY = 0; player.vy = 0; player.onGround = true;
@@ -657,6 +700,80 @@ function drawPlayer() {
   ctx.restore();
 }
 
+// ---------- Desenho: bigorna e aviso na tela ----------
+function drawAnvilSprite(x, y, s) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(s, s);
+  ctx.fillStyle = '#3a3a3f';
+  ctx.strokeStyle = '#111'; ctx.lineWidth = 2;
+  // base (parte de baixo, mais larga)
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(-32, 10, 64, 14, 4); else ctx.rect(-32, 10, 64, 14);
+  ctx.fill(); ctx.stroke();
+  // corpo
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(-20, -14, 40, 26, 6); else ctx.rect(-20, -14, 40, 26);
+  ctx.fill(); ctx.stroke();
+  // chifre (bico fino da bigorna)
+  ctx.beginPath();
+  ctx.moveTo(20, -6); ctx.lineTo(44, -2); ctx.lineTo(44, 6); ctx.lineTo(20, 6);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,.18)';
+  ctx.fillRect(-16, -10, 30, 5);
+  ctx.restore();
+}
+
+function drawAnvil() {
+  if (!anvil) return;
+  const x = laneX(anvil.lane, 0);
+
+  if (anvil.phase === 'warning') {
+    // sombra no chão crescendo — é o aviso pra trocar de pista
+    const p = 1 - anvil.timer / ANVIL_WARN_TIME;
+    const w = 20 + p * 42, h = 8 + p * 15;
+    ctx.save();
+    ctx.fillStyle = `rgba(0,0,0,${0.25 + p * 0.4})`;
+    ctx.beginPath(); ctx.ellipse(x, BASE_Y + 6, w, h, 0, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  } else if (anvil.phase === 'falling') {
+    const p = 1 - anvil.timer / ANVIL_FALL_TIME; // 0 = lá em cima, 1 = no chão
+    const y = -60 + p * (BASE_Y - (-60));
+    const scale = 0.4 + p * 0.9;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,.55)';
+    ctx.beginPath(); ctx.ellipse(x, BASE_Y + 6, 46, 16, 0, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    drawAnvilSprite(x, y, scale);
+  } else if (anvil.phase === 'done') {
+    // poeira do impacto, sumindo rápido
+    const p = Math.max(0, anvil.timer / 0.3);
+    ctx.save();
+    ctx.globalAlpha = p;
+    ctx.strokeStyle = '#c9c2b8'; ctx.lineWidth = 3;
+    for (let i = 0; i < 6; i++) {
+      const a = i * Math.PI / 3;
+      ctx.beginPath();
+      ctx.moveTo(x, BASE_Y);
+      ctx.lineTo(x + Math.cos(a) * 26, BASE_Y + Math.sin(a) * 10);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+function drawScreenFlash() {
+  if (!anvil || anvil.phase !== 'warning') return;
+  if (Math.floor(time * 8) % 2 !== 0) return; // pisca ~4x por segundo
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,40,40,.22)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = 'rgba(255,60,60,.85)';
+  ctx.lineWidth = 14;
+  ctx.strokeRect(7, 7, W - 14, H - 14);
+  ctx.restore();
+}
+
 // ---------- Desenho: tudo junto ----------
 function draw() {
   drawSky();
@@ -666,6 +783,8 @@ function draw() {
   for (let i = obstacles.length - 1; i >= 0; i--) drawObstacle(obstacles[i]);
   for (let i = coins.length - 1; i >= 0; i--) drawCoin(coins[i]);
   drawPlayer();
+  drawAnvil();
+  drawScreenFlash();
 }
 
 // ---------- Loop principal ----------
