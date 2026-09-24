@@ -54,13 +54,14 @@
 <div id="wrap">
   <div id="hud">
     <div class="stat">🪙 <b id="coinVal">0</b></div>
+    <div class="stat">❤️ <b id="livesVal">3</b></div>
     <div id="progress"><div id="progressFill"></div><div id="progressIcon">🛹</div></div>
     <div class="stat">🏁 <b id="pctVal">0</b>%</div>
   </div>
 
   <canvas id="game" width="900" height="500"></canvas>
 
-  <div id="hint">← → trocar de pista · ↑ ou ESPAÇO pular cone · desvie de caçamba, buraco e dominó · junte moedas e chegue ao fim 🛹</div>
+  <div id="hint">← → trocar de pista · ↑ ou ESPAÇO pular cone · desvie de caçamba, buraco e dominó · você tem 3 vidas, e fica piscando 1s (sem poder se machucar de novo) depois de bater 🛹</div>
 
   <div id="overlay">
     <h2 id="overlayTitle">🏁 CHEGOU!</h2>
@@ -73,8 +74,9 @@
 /* =========================================================
    SKATE NO BAIRRO — jogo modelo da Aula 5 (corredor de 3
    pistas, visto de trás). O skatista, o controle, as moedas,
-   os obstáculos (cone, buraco, caçamba, dominó) e o objetivo
-   (chegar ao fim da rua) já funcionam. Ainda não tem vida,
+   os obstáculos (cone, buraco, caçamba, dominó), as 3 vidas
+   com 1s de invencibilidade piscando depois de bater, e o
+   objetivo (chegar ao fim da rua) já funcionam. Ainda não tem
    perseguidor nem níveis — isso a turma constrói nas missões,
    uma de cada vez, sempre em cima deste código.
    ========================================================= */
@@ -99,6 +101,13 @@ let distance = 0;
 let time = 0;
 let gameOver = false;
 let coinCount = 0;
+
+// ---------- Vidas e invencibilidade ----------
+const LIVES_START = 3;
+const INVINCIBLE_TIME = 1;   // segundos piscando, sem poder bater de novo
+let lives = LIVES_START;
+let invincible = false;
+let invincibleTimer = 0;
 
 // ---------- Perspectiva ----------
 function sc(d) { return FOCAL / (FOCAL + Math.max(d, -FOCAL*0.6)); }
@@ -180,6 +189,12 @@ function update(dt) {
     if (player.jumpY <= 0) { player.jumpY = 0; player.vy = 0; player.onGround = true; }
   }
 
+  // conta o tempo de invencibilidade (piscando) depois de bater
+  if (invincibleTimer > 0) {
+    invincibleTimer -= dt;
+    if (invincibleTimer <= 0) { invincibleTimer = 0; invincible = false; }
+  }
+
   for (const c of coins) {
     if (c.taken) continue;
     const d = c.d - distance;
@@ -190,14 +205,23 @@ function update(dt) {
     }
   }
 
-  for (const o of obstacles) {
-    if (o.hit) continue;
-    const d = o.d - distance;
-    if (d < 1.3 && d > -1.6 && Math.abs(player.lane - o.lane) < 0.6) {
-      if (o.type === 'cone' && player.jumpY > 34) continue; // deu pra pular o cone
-      o.hit = true;
-      loseGame();
-      return;
+  if (!invincible) {
+    for (const o of obstacles) {
+      if (o.hit) continue;
+      const d = o.d - distance;
+      if (d < 1.3 && d > -1.6 && Math.abs(player.lane - o.lane) < 0.6) {
+        if (o.type === 'cone' && player.jumpY > 34) continue; // deu pra pular o cone
+        o.hit = true;
+        lives--;
+        document.getElementById('livesVal').textContent = Math.max(0, lives);
+        if (lives <= 0) {
+          loseGame();
+          return;
+        }
+        invincible = true;
+        invincibleTimer = INVINCIBLE_TIME;
+        break; // só perde 1 vida por vez, mesmo se tiver 2 obstáculos colados
+      }
     }
   }
 
@@ -218,7 +242,7 @@ function winGame() {
 function loseGame() {
   gameOver = true;
   document.getElementById('overlayTitle').textContent = '🏥 FOI PRO HOSPITAL!';
-  document.getElementById('overlayText').textContent = `Bateu de skate e se machucou. Chegou até ${Math.floor(distance)}m com ${coinCount} moedas. Vamos de novo?`;
+  document.getElementById('overlayText').textContent = `Bateu ${LIVES_START} vezes e as vidas acabaram. Chegou até ${Math.floor(distance)}m com ${coinCount} moedas. Vamos de novo?`;
   document.getElementById('overlay').classList.add('show');
 }
 
@@ -226,12 +250,16 @@ function restart() {
   speed = START_SPEED;
   distance = 0; time = 0;
   coinCount = 0;
+  lives = LIVES_START;
+  invincible = false;
+  invincibleTimer = 0;
   gameOver = false;
   player.lane = player.targetLane = 1;
   player.jumpY = 0; player.vy = 0; player.onGround = true;
   buildCoins();
   buildObstacles();
   document.getElementById('coinVal').textContent = 0;
+  document.getElementById('livesVal').textContent = lives;
   document.getElementById('overlay').classList.remove('show');
 }
 
@@ -570,6 +598,8 @@ function drawPlayer() {
   ctx.save();
   ctx.translate(x, BASE_Y - jy + bob);
   ctx.rotate(lean);
+  // pisca 5x por segundo enquanto está invencível (acabou de bater)
+  if (invincible) ctx.globalAlpha = (Math.floor(time * 10) % 2 === 0) ? 1 : 0.25;
 
   // skate (shape visto de trás)
   const deck = ctx.createLinearGradient(0, -20, 0, -6);
