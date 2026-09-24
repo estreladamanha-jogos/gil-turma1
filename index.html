@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Área de trabalho do Gil</title>
+    <style>
+        :root {
+            --fundo: #f4f6fb;
+            --cartao: #ffffff;
+            --texto: #1f2937;
+            --suave: #6b7280;
+            --destaque: #4f46e5;
+            --borda: #e5e7eb;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            background: var(--fundo);
+            color: var(--texto);
+            line-height: 1.5;
+        }
+
+        .topo {
+            background: var(--destaque);
+            color: #fff;
+            padding: 32px 16px;
+            text-align: center;
+        }
+
+        .topo h1 {
+            font-size: 1.8rem;
+        }
+
+        .topo p {
+            opacity: 0.9;
+        }
+
+        .conteudo {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 24px 16px;
+            display: grid;
+            gap: 24px;
+        }
+
+        .bloco {
+            background: var(--cartao);
+            border: 1px solid var(--borda);
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .bloco h2 {
+            font-size: 1.2rem;
+            margin-bottom: 12px;
+        }
+
+        .lista-projetos {
+            list-style: none;
+            display: grid;
+            gap: 12px;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        }
+
+        .projeto {
+            border: 1px dashed var(--borda);
+            border-radius: 8px;
+            padding: 16px;
+            color: var(--suave);
+        }
+
+        .projeto a {
+            color: var(--destaque);
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .form-tarefa {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .form-tarefa input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid var(--borda);
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+
+        .botao {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 8px;
+            background: var(--destaque);
+            color: #fff;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+
+        .lista-tarefas {
+            list-style: none;
+            display: grid;
+            gap: 8px;
+        }
+
+        .tarefa {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .tarefa.feita span {
+            text-decoration: line-through;
+            color: var(--suave);
+        }
+
+        .anotacoes {
+            width: 100%;
+            min-height: 140px;
+            padding: 10px;
+            border: 1px solid var(--borda);
+            border-radius: 8px;
+            font: inherit;
+            resize: vertical;
+        }
+
+        .dica {
+            font-size: 0.85rem;
+            color: var(--suave);
+            margin-top: 6px;
+        }
+
+        .rodape {
+            text-align: center;
+            padding: 24px 16px;
+            color: var(--suave);
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <header class="topo">
+        <h1>Área de trabalho do Gil</h1>
+        <p>Turma 1 · Meu espaço para aprender e criar</p>
+    </header>
+
+    <main class="conteudo">
+        <section class="bloco">
+            <h2>Meus projetos</h2>
+            <ul class="lista-projetos">
+                <!-- Troque pelo link e nome de cada projeto novo -->
+                <li class="projeto">
+                    <a href="#">Projeto 1</a>
+                    <p>Em breve...</p>
+                </li>
+                <li class="projeto">
+                    <a href="#">Projeto 2</a>
+                    <p>Em breve...</p>
+                </li>
+            </ul>
+        </section>
+
+        <section class="bloco">
+            <h2>Tarefas</h2>
+            <form class="form-tarefa" id="form-tarefa">
+                <input type="text" id="nova-tarefa" placeholder="O que preciso fazer?" required>
+                <button type="submit" class="botao">Adicionar</button>
+            </form>
+            <ul class="lista-tarefas" id="lista-tarefas"></ul>
+        </section>
+
+        <section class="bloco">
+            <h2>Anotações</h2>
+            <textarea class="anotacoes" id="anotacoes" placeholder="Escreva aqui suas ideias..."></textarea>
+            <p class="dica">Tudo fica salvo neste navegador.</p>
+        </section>
+    </main>
+
+    <footer class="rodape">
+        <p>Feito pelo Gil · Estrela da Manhã Jogos</p>
+    </footer>
+
+    <script>
+        // Salva e lê dados no navegador (sem quebrar se não der)
+        function ler(chave, padrao) {
+            try {
+                return JSON.parse(localStorage.getItem(chave)) ?? padrao;
+            } catch {
+                return padrao;
+            }
+        }
+
+        function salvar(chave, valor) {
+            try {
+                localStorage.setItem(chave, JSON.stringify(valor));
+            } catch {}
+        }
+
+        // Tarefas
+        const form = document.getElementById("form-tarefa");
+        const campo = document.getElementById("nova-tarefa");
+        const lista = document.getElementById("lista-tarefas");
+        let tarefas = ler("tarefas", []);
+
+        function mostrarTarefas() {
+            lista.innerHTML = "";
+            tarefas.forEach((tarefa, i) => {
+                const item = document.createElement("li");
+                item.className = tarefa.feita ? "tarefa feita" : "tarefa";
+
+                const marcar = document.createElement("input");
+                marcar.type = "checkbox";
+                marcar.checked = tarefa.feita;
+                marcar.addEventListener("change", () => {
+                    tarefas[i].feita = marcar.checked;
+                    salvar("tarefas", tarefas);
+                    mostrarTarefas();
+                });
+
+                const texto = document.createElement("span");
+                texto.textContent = tarefa.texto;
+
+                item.append(marcar, texto);
+                lista.append(item);
+            });
+        }
+
+        form.addEventListener("submit", (evento) => {
+            evento.preventDefault();
+            tarefas.push({ texto: campo.value.trim(), feita: false });
+            salvar("tarefas", tarefas);
+            campo.value = "";
+            mostrarTarefas();
+        });
+
+        mostrarTarefas();
+
+        // Anotações
+        const anotacoes = document.getElementById("anotacoes");
+        anotacoes.value = ler("anotacoes", "");
+        anotacoes.addEventListener("input", () => salvar("anotacoes", anotacoes.value));
+    </script>
+</body>
+</html>
