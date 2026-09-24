@@ -55,13 +55,14 @@
   <div id="hud">
     <div class="stat">🪙 <b id="coinVal">0</b></div>
     <div class="stat">❤️ <b id="livesVal">3</b></div>
+    <div class="stat">🦁 <b id="lionVal">longe</b></div>
     <div id="progress"><div id="progressFill"></div><div id="progressIcon">🛹</div></div>
     <div class="stat">🏁 <b id="pctVal">0</b>%</div>
   </div>
 
   <canvas id="game" width="900" height="500"></canvas>
 
-  <div id="hint">← → trocar de pista · ↑ ou ESPAÇO pular cone · desvie de caçamba, buraco e dominó · quando a tela piscar vermelho, uma bigorna vai cair — olha a sombra e troca de pista! 🛹</div>
+  <div id="hint">← → trocar de pista · ↑ ou ESPAÇO pular cone · desvie de caçamba, buraco e dominó · tela piscando vermelho = bigorna caindo · um leão vem atrás: cada batida deixa você lento e ele se aproxima — na 2ª batida ele te pega! 🛹</div>
 
   <div id="overlay">
     <h2 id="overlayTitle">🏁 CHEGOU!</h2>
@@ -76,9 +77,10 @@
    pistas, visto de trás). O skatista, o controle, as moedas,
    os obstáculos (cone, buraco, caçamba, dominó), as 3 vidas
    com 1s de invencibilidade piscando depois de bater, a bigorna
-   que cai do céu (com sombra e tela piscando avisando antes),
-   e o objetivo (chegar ao fim da rua) já funcionam. Ainda não
-   tem perseguidor nem níveis — isso a turma constrói nas
+   que cai do céu (com sombra e tela piscando avisando antes) e
+   o leão que persegue o skatista (cada batida deixa ele lento
+   e o leão chega mais perto; na 2ª batida o leão alcança) já
+   funcionam. Ainda não tem níveis — isso a turma constrói nas
    missões, uma de cada vez, sempre em cima deste código.
    ========================================================= */
 
@@ -117,6 +119,16 @@ const ANVIL_MIN_GAP = 5;       // menor tempo até a próxima bigorna
 const ANVIL_MAX_GAP = 9;       // maior tempo até a próxima bigorna
 let anvil = null;              // { lane, phase: 'warning'|'falling'|'done', timer }
 let anvilCooldown = 3 + Math.random() * 2; // primeira bigorna cai depois de 3-5s
+
+// ---------- Leão perseguidor ----------
+const LION_HITS_TO_CATCH = 2;   // na 2ª batida (obstáculo ou bigorna) o leão alcança
+const LION_SLOW_TIME = 1.2;     // segundos que o skatista fica lento depois de bater
+const LION_SLOW_FACTOR = 0.55;  // velocidade multiplicada por isso enquanto está lento
+const LION_RECOVER_SPEED = 0.15; // o quanto o skatista consegue "recuperar fôlego" por segundo
+let lionHits = 0;               // quantas batidas já contaram pro leão
+let lionGap = 1;                 // 1 = leão bem longe (seguro), 0 = alcançou o skatista
+let lionGapCeiling = 1;          // até onde o fôlego consegue recuperar (cai a cada batida)
+let lionSlowTimer = 0;           // enquanto > 0, o skatista corre mais devagar
 
 // ---------- Perspectiva ----------
 function sc(d) { return FOCAL / (FOCAL + Math.max(d, -FOCAL*0.6)); }
@@ -184,11 +196,55 @@ function tryJump() {
   if (player.onGround) { player.vy = JUMP_SPEED; player.onGround = false; }
 }
 
+// chamada sempre que o skatista bate em algo (obstáculo ou bigorna).
+// cuida das vidas e também do leão. devolve true quando o jogo já acabou.
+function handleHit() {
+  lives--;
+  document.getElementById('livesVal').textContent = Math.max(0, lives);
+
+  lionHits++;
+  if (lionHits >= LION_HITS_TO_CATCH) {
+    lionGap = 0;
+    document.getElementById('lionVal').textContent = 'PEGOU!';
+    loseGameLion();
+    return true;
+  }
+  // o leão dá um pulo pra frente e fica de olho mais perto a partir de agora
+  lionGapCeiling = Math.max(0.35, lionGapCeiling - 0.5);
+  lionGap = Math.min(lionGap, lionGapCeiling * 0.4);
+  lionSlowTimer = LION_SLOW_TIME;
+
+  if (lives <= 0) {
+    loseGame();
+    return true;
+  }
+  invincible = true;
+  invincibleTimer = INVINCIBLE_TIME;
+  return false;
+}
+
 // ---------- Atualização ----------
 function update(dt) {
   if (gameOver) return;
   time += dt;
-  distance += speed * dt;
+
+  // enquanto está "lento" (acabou de bater), anda mais devagar — e é aí
+  // que o leão ganha terreno
+  if (lionSlowTimer > 0) {
+    lionSlowTimer -= dt;
+    if (lionSlowTimer < 0) lionSlowTimer = 0;
+  }
+  const speedNow = speed * (lionSlowTimer > 0 ? LION_SLOW_FACTOR : 1);
+  distance += speedNow * dt;
+
+  // fora do susto, o skatista vai recuperando fôlego e o leão fica pra trás nesse limite
+  if (lionGap < lionGapCeiling) {
+    lionGap = Math.min(lionGapCeiling, lionGap + dt * LION_RECOVER_SPEED);
+  }
+  const lionEl = document.getElementById('lionVal');
+  if (lionEl && lionHits < LION_HITS_TO_CATCH) {
+    lionEl.textContent = lionGap > 0.6 ? 'longe' : (lionGap > 0.25 ? 'perto!' : 'QUASE!');
+  }
 
   player.lane += (player.targetLane - player.lane) * Math.min(1, dt * 14);
 
@@ -221,14 +277,7 @@ function update(dt) {
       if (d < 1.3 && d > -1.6 && Math.abs(player.lane - o.lane) < 0.6) {
         if (o.type === 'cone' && player.jumpY > 34) continue; // deu pra pular o cone
         o.hit = true;
-        lives--;
-        document.getElementById('livesVal').textContent = Math.max(0, lives);
-        if (lives <= 0) {
-          loseGame();
-          return;
-        }
-        invincible = true;
-        invincibleTimer = INVINCIBLE_TIME;
+        if (handleHit()) return;
         break; // só perde 1 vida por vez, mesmo se tiver 2 obstáculos colados
       }
     }
@@ -243,11 +292,7 @@ function update(dt) {
       anvil.timer -= dt;
       if (anvil.timer <= 0) {
         if (!invincible && Math.abs(player.lane - anvil.lane) < 0.6) {
-          lives--;
-          document.getElementById('livesVal').textContent = Math.max(0, lives);
-          if (lives <= 0) { loseGame(); return; }
-          invincible = true;
-          invincibleTimer = INVINCIBLE_TIME;
+          if (handleHit()) return;
         }
         anvil.phase = 'done';
         anvil.timer = 0.3; // poeira do impacto some rápido
@@ -287,6 +332,13 @@ function loseGame() {
   document.getElementById('overlay').classList.add('show');
 }
 
+function loseGameLion() {
+  gameOver = true;
+  document.getElementById('overlayTitle').textContent = '🦁 O LEÃO TE PEGOU!';
+  document.getElementById('overlayText').textContent = `Bateu ${LION_HITS_TO_CATCH} vezes, ficou devagar demais e o leão alcançou! Chegou até ${Math.floor(distance)}m com ${coinCount} moedas. Vamos de novo?`;
+  document.getElementById('overlay').classList.add('show');
+}
+
 function restart() {
   speed = START_SPEED;
   distance = 0; time = 0;
@@ -296,6 +348,11 @@ function restart() {
   invincibleTimer = 0;
   anvil = null;
   anvilCooldown = 3 + Math.random() * 2;
+  lionHits = 0;
+  lionGap = 1;
+  lionGapCeiling = 1;
+  lionSlowTimer = 0;
+  document.getElementById('lionVal').textContent = 'longe';
   gameOver = false;
   player.lane = player.targetLane = 1;
   player.jumpY = 0; player.vy = 0; player.onGround = true;
@@ -700,6 +757,58 @@ function drawPlayer() {
   ctx.restore();
 }
 
+// ---------- Desenho: leão perseguidor ----------
+function drawLion() {
+  const closeness = 1 - lionGap; // 0 = seguro e longe, 1 = quase alcançando
+  if (closeness < 0.03) return; // tão longe que nem aparece
+  const scale = 0.55 + closeness * 0.9;
+  const x = W / 2, y = H + 70 - closeness * 95; // sobe conforme se aproxima
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, 0.3 + closeness * 0.8);
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  // juba
+  ctx.fillStyle = '#8a4a12';
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.ellipse(Math.cos(a) * 68, -22 + Math.sin(a) * 56, 26, 20, a, 0, Math.PI*2);
+    ctx.fill();
+  }
+  // corpo/rosto
+  ctx.fillStyle = '#dba15a';
+  ctx.beginPath(); ctx.ellipse(0, -34, 46, 38, 0, 0, Math.PI*2); ctx.fill();
+  // focinho
+  ctx.fillStyle = '#f2d9b0';
+  ctx.beginPath(); ctx.ellipse(0, -18, 22, 16, 0, 0, Math.PI*2); ctx.fill();
+  // olhos (ficam mais bravos quando está perto)
+  ctx.fillStyle = '#1a1a1a';
+  ctx.beginPath(); ctx.ellipse(-16, -40, 6, closeness > 0.5 ? 9 : 7, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(16, -40, 6, closeness > 0.5 ? 9 : 7, 0, 0, Math.PI*2); ctx.fill();
+  // nariz e boca
+  ctx.fillStyle = '#3a2010';
+  ctx.beginPath(); ctx.ellipse(0, -22, 6, 4, 0, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#5a2a10'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-14, -12);
+  ctx.quadraticCurveTo(0, closeness > 0.5 ? 4 : -8, 14, -12);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawLionVignette() {
+  const closeness = 1 - lionGap;
+  if (closeness < 0.35) return;
+  const alpha = (closeness - 0.35) / 0.65 * 0.35;
+  ctx.save();
+  const g = ctx.createRadialGradient(W/2, H, 40, W/2, H, 260);
+  g.addColorStop(0, `rgba(200,20,20,${alpha})`);
+  g.addColorStop(1, 'rgba(200,20,20,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+}
+
 // ---------- Desenho: bigorna e aviso na tela ----------
 function drawAnvilSprite(x, y, s) {
   ctx.save();
@@ -782,8 +891,10 @@ function draw() {
   drawFinish();
   for (let i = obstacles.length - 1; i >= 0; i--) drawObstacle(obstacles[i]);
   for (let i = coins.length - 1; i >= 0; i--) drawCoin(coins[i]);
+  drawLion();
   drawPlayer();
   drawAnvil();
+  drawLionVignette();
   drawScreenFlash();
 }
 
