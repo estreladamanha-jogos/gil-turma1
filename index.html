@@ -134,7 +134,7 @@ const jog = { x: W / 2, vx: 0, dir: 1 };
 let obst = [], gems = [], fx = [], portais = [];
 let spawnT = 1, gemT = 1, ultimaFronteira = -1;
 let anuncioTxt = '', anuncioT = 0;
-const keys = { left: false, right: false, invisivel: false };
+const keys = { left: false, right: false };
 
 /* ---------- escolha de poder (tecla Q) — só de mostrar qual está escolhido ---------- */
 const PODERES = ['ESCUDO', 'DASH', 'INVISIBILIDADE'];
@@ -166,8 +166,24 @@ function tentarDash(dir) {
   burst(jog.x, PY, '#ffffff', 10, 100);
 }
 
-/* ---------- invisibilidade (segurar V): passa direto pelos obstáculos ---------- */
-let invisPoeira = 0;
+/* ---------- invisibilidade: passa direto pelos obstáculos por um tempo ---------- */
+const INVIS_DURACAO = 1.8, INVIS_RECARGA = 6;
+let invisT = 0, invisCd = 0, invisPoeira = 0;
+function ativarInvisibilidade() {
+  if (estado !== 'jogando' || invisCd > 0) return;
+  invisT = INVIS_DURACAO; invisCd = INVIS_RECARGA;
+  burst(jog.x, PY, '#c9c0ff', 16, 120);
+}
+
+/* ---------- tecla X contada: 1x = escudo, 2x rápido = invisibilidade, 3x rápido = dash ---------- */
+const X_JANELA = 0.38;
+let xCliques = 0, xCliqueTimer = 0;
+function resolverCliquesX() {
+  if (xCliques === 1) ativarEscudo();
+  else if (xCliques === 2) ativarInvisibilidade();
+  else if (xCliques >= 3) tentarDash(jog.dir || 1);
+  xCliques = 0;
+}
 
 /* ---------- fala o nome do mundo em voz alta ---------- */
 function falarMundo(nome) {
@@ -183,7 +199,8 @@ function resetar() {
   jog.x = W / 2; jog.vx = 0; obst = []; gems = []; fx = []; portais = []; spawnT = 1; gemT = 1; ultimaFronteira = -1;
   anuncioTxt = ''; anuncioT = 0;
   escudoT = 0; escudoCd = 0; dashT = 0; dashCd = 0; dashFlash = 0; ultimoToqueEsq = -10; ultimoToqueDir = -10;
-  keys.invisivel = false; poderIdx = 0; poderAnuncioT = 0; invisPoeira = 0;
+  poderIdx = 0; poderAnuncioT = 0; invisPoeira = 0;
+  invisT = 0; invisCd = 0; xCliques = 0; xCliqueTimer = 0;
 }
 
 /* ---------- obstáculos: um tipo diferente para cada mundo ---------- */
@@ -258,7 +275,7 @@ function desenharPortal(p) {
 /* ---------- entrada ---------- */
 addEventListener('keydown', e => {
   const k = e.code;
-  if (['Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Tab', 'KeyX', 'KeyV', 'KeyQ'].includes(k)) e.preventDefault();
+  if (['Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Tab', 'KeyX', 'KeyQ'].includes(k)) e.preventDefault();
   if (estado !== 'jogando') { if (k === 'Space' || k === 'Enter' || k === 'KeyR') resetar(); return; }
   if (k === 'ArrowLeft' || k === 'KeyA') {
     keys.left = true;
@@ -276,13 +293,11 @@ addEventListener('keydown', e => {
       ultimoToqueDir = agora;
     }
   }
-  if (k === 'KeyX' && !e.repeat) ativarEscudo();
+  if (k === 'KeyX' && !e.repeat) { xCliques++; xCliqueTimer = X_JANELA; }
   if (k === 'Space' && !e.repeat) tentarDash(jog.dir || 1);
-  if (k === 'KeyV') keys.invisivel = true;
   if (k === 'KeyQ' && !e.repeat) trocarPoder();
 });
 addEventListener('keyup', e => {
-  if (e.code === 'KeyV') keys.invisivel = false;
   if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = false;
   if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = false;
 });
@@ -309,10 +324,16 @@ function update(dt) {
   if (dashCd > 0) dashCd -= dt;
   if (dashFlash > 0) dashFlash -= dt;
   if (poderAnuncioT > 0) poderAnuncioT -= dt;
-  if (keys.invisivel) {
+  if (invisT > 0) invisT -= dt;
+  if (invisCd > 0) invisCd -= dt;
+  if (invisT > 0) {
     invisPoeira -= dt;
     if (invisPoeira <= 0) { burst(jog.x, PY, '#c9c0ff', 2, 40); invisPoeira = 0.06; }
   } else invisPoeira = 0;
+  if (xCliqueTimer > 0) {
+    xCliqueTimer -= dt;
+    if (xCliqueTimer <= 0) resolverCliquesX();
+  }
 
   // ---- movimento do Fagulha (dash de dois toques tem prioridade) ----
   if (dashT > 0) {
@@ -373,7 +394,7 @@ function update(dt) {
   const hb = { x: jog.x - 15, y: PY - 26, w: 30, h: 58 };
   for (const o of obst) {
     if (o.morto) continue;
-    if (keys.invisivel) continue; // invisível passa direto pelos obstáculos
+    if (invisT > 0) continue; // invisível passa direto pelos obstáculos
     const ox = o.x - o.w * .42, oy = o.y - o.h * .42, ow = o.w * .84, oh = o.h * .84;
     if (hb.x < ox + ow && hb.x + hb.w > ox && hb.y < oy + oh && hb.y + hb.h > oy) {
       if (invenc > 0) continue;
@@ -521,7 +542,7 @@ function desenhar() {
   }
 
   // ---- brilho fantasma quando invisível ----
-  if (keys.invisivel && estado === 'jogando') {
+  if (invisT > 0 && estado === 'jogando') {
     c.save(); c.translate(jog.x, PY + 4);
     const pulso = 40 + Math.sin(t * 10) * 5;
     const gv = c.createRadialGradient(0, 0, 0, 0, 0, pulso);
@@ -535,7 +556,7 @@ function desenhar() {
   if (estado !== 'gameover') {
     drawFagulha(c, jog.x, PY + 12, .42, t, {
       vx: clamp(jog.vx / 300, -1, 1), hit: invenc > 1.2,
-      alpha: keys.invisivel ? .38 : (piscando ? .3 : 1) });
+      alpha: invisT > 0 ? .38 : (piscando ? .3 : 1) });
   }
   for (const p of fx) { c.globalAlpha = clamp(p.life / p.max, 0, 1); c.fillStyle = p.cor; c.beginPath(); c.arc(p.x, p.y, p.r, 0, 7); c.fill(); }
   c.globalAlpha = 1;
@@ -593,7 +614,7 @@ function hud() {
     c.arc(11, 0, 15, -Math.PI / 2, -Math.PI / 2 + p * 6.283); c.stroke();
   }
   c.restore();
-  texto(pronto ? 'X: ESCUDO' : Math.ceil(escudoCd) + 's', 40, 52, 7, pronto ? '#7ad9ff' : '#999', 'left');
+  texto(pronto ? 'X 1x ESCUDO' : Math.ceil(escudoCd) + 's', 40, 52, 7, pronto ? '#7ad9ff' : '#999', 'left');
 
   // ---- poder atualmente escolhido (Q pra trocar) ----
   texto('Q: ' + PODERES[poderIdx], 12, 70, 7, '#c9c0ff', 'left');
@@ -606,8 +627,8 @@ function telas() {
     texto('QUEDA ENTRE MUNDOS', W / 2, 200, 12, '#7af6ff');
     texto('LAVA · CÉU · DESERTO · CIDADE', W / 2, 226, 8, '#ffd97a');
     drawFagulha(c, W / 2, 345, .9, performance.now() / 1000, { pose: 'stand' });
-    texto('X = ESCUDO   ESPAÇO/◀◀▶▶ = DASH', W / 2, 452, 8, '#7ad9ff');
-    texto('SEGURA V = INVISÍVEL   Q = TROCA PODER', W / 2, 470, 8, '#c9c0ff');
+    texto('X 1x=ESCUDO 2x=INVISÍVEL 3x=DASH', W / 2, 452, 8, '#7ad9ff');
+    texto('ESPAÇO/◀◀▶▶ TAMBÉM DÁ DASH · Q TROCA PODER', W / 2, 470, 7, '#c9c0ff');
     if (Math.floor(performance.now() / 500) % 2) texto('APERTE ESPAÇO', W / 2, 520, 14, '#fff');
   } else if (estado === 'gameover') {
     c.fillStyle = 'rgba(30,0,10,.78)'; c.fillRect(0, 0, W, H);
