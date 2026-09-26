@@ -133,11 +133,22 @@ let vidas = 3, invenc = 0, cristais = 0, shake = 0, flash = 0;
 const jog = { x: W / 2, vx: 0, dir: 1 };
 let obst = [], gems = [], fx = [], portais = [];
 let spawnT = 1, gemT = 1, ultimaFronteira = -1;
+let anuncioTxt = '', anuncioT = 0;
 const keys = { left: false, right: false };
+
+/* ---------- fala o nome do mundo em voz alta ---------- */
+function falarMundo(nome) {
+  if (!('speechSynthesis' in window)) return;
+  speechSynthesis.cancel();
+  const fala = new SpeechSynthesisUtterance(nome);
+  fala.lang = 'pt-BR'; fala.rate = 1; fala.pitch = 1.1;
+  speechSynthesis.speak(fala);
+}
 
 function resetar() {
   estado = 'jogando'; t = 0; dist = 0; vidas = 3; invenc = 0; cristais = 0; shake = 0; flash = 0;
   jog.x = W / 2; jog.vx = 0; obst = []; gems = []; fx = []; portais = []; spawnT = 1; gemT = 1; ultimaFronteira = -1;
+  anuncioTxt = ''; anuncioT = 0;
 }
 
 /* ---------- obstáculos ---------- */
@@ -218,9 +229,13 @@ function update(dt) {
     if (!p.passou && Math.abs(p.y - PY) < 18) {
       p.passou = true; flash = .28; shake = .2;
       burst(jog.x, PY, p.corB, 22, 170);
+      const proxNome = MUNDOS[worldIndex(p.fronteira)].nome;
+      anuncioTxt = proxNome; anuncioT = 2.2;
+      falarMundo(proxNome);
     }
   }
   portais = portais.filter(p => p.y > -90);
+  if (anuncioT > 0) anuncioT -= dt;
 
   // ---- obstáculos ----
   spawnT -= dt;
@@ -318,6 +333,14 @@ function desenhar() {
   c.restore();
 
   if (flash > 0) { c.fillStyle = `rgba(255,255,255,${clamp(flash / .28, 0, 1) * .55})`; c.fillRect(0, 0, W, H); }
+
+  if (anuncioT > 0 && estado === 'jogando') {
+    const al = clamp(Math.min(anuncioT, 2.2 - anuncioT + .5) / .5, 0, 1);
+    c.globalAlpha = al;
+    c.fillStyle = 'rgba(0,0,0,.4)'; c.fillRect(0, H / 2 - 34, W, 68);
+    texto('MUNDO: ' + anuncioTxt, W / 2, H / 2, 18, '#ffe9a8');
+    c.globalAlpha = 1;
+  }
 
   hud();
   telas();
