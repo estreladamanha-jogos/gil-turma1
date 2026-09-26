@@ -151,18 +151,39 @@ function resetar() {
   anuncioTxt = ''; anuncioT = 0;
 }
 
-/* ---------- obstáculos ---------- */
+/* ---------- obstáculos: um tipo diferente para cada mundo ---------- */
 function criarObstaculo() {
-  obst.push({ tp: 'pedra', x: rnd(50, W - 50), y: H + 40, w: rnd(50, 88), h: rnd(40, 56), sd: Math.random() });
+  const mundo = MUNDOS[worldIndex(dist)].nome;
+  obst.push({ mundo, x: rnd(50, W - 50), y: H + 40, w: rnd(50, 88), h: rnd(40, 56), sd: Math.random() });
 }
 
 function desenharObstaculo(o) {
   c.save(); c.translate(o.x, o.y);
-  {
-    c.fillStyle = '#6d6a80'; c.strokeStyle = '#34324a'; c.lineWidth = 2.4;
+  if (o.mundo === 'LAVA') {
+    // rocha vulcânica com rachaduras brilhando
+    c.fillStyle = '#241614'; c.strokeStyle = '#0d0808'; c.lineWidth = 2.4;
     c.beginPath(); c.moveTo(-o.w / 2, o.h / 2); c.lineTo(-o.w / 2 + 6, -o.h / 3); c.lineTo(-o.w / 5, -o.h / 2); c.lineTo(o.w / 4, -o.h / 2 + 4);
     c.lineTo(o.w / 2 - 4, -o.h / 5); c.lineTo(o.w / 2, o.h / 2); c.closePath(); c.fill(); c.stroke();
-    c.fillStyle = 'rgba(255,255,255,.14)'; c.beginPath(); c.moveTo(-o.w / 5, -o.h / 2 + 4); c.lineTo(o.w / 4, -o.h / 2 + 8); c.lineTo(0, -4); c.fill();
+    c.strokeStyle = '#ff6a2b'; c.lineWidth = 2; c.beginPath();
+    c.moveTo(-o.w / 6, -o.h / 4); c.lineTo(0, 0); c.lineTo(o.w / 8, o.h / 3); c.stroke();
+  } else if (o.mundo === 'CÉU') {
+    // nuvem de tempestade com raio
+    c.fillStyle = '#39406a'; c.strokeStyle = '#20264a'; c.lineWidth = 2;
+    c.beginPath(); c.arc(-o.w / 4, 4, o.h / 3, 0, 7); c.arc(0, -6, o.h / 2.6, 0, 7); c.arc(o.w / 4, 4, o.h / 3, 0, 7); c.fill(); c.stroke();
+    c.fillStyle = '#ffe94a'; c.beginPath();
+    c.moveTo(4, o.h / 6); c.lineTo(-8, o.h / 2); c.lineTo(2, o.h / 2); c.lineTo(-6, o.h); c.lineTo(14, o.h / 2.6); c.lineTo(2, o.h / 2.6); c.closePath(); c.fill();
+  } else if (o.mundo === 'DESERTO') {
+    // cacto do deserto
+    c.fillStyle = '#4a8a4a'; c.strokeStyle = '#2a5a2a'; c.lineWidth = 2.4;
+    c.beginPath(); c.roundRect ? c.roundRect(-o.w / 10, -o.h / 2, o.w / 5, o.h, 8) : c.rect(-o.w / 10, -o.h / 2, o.w / 5, o.h); c.fill(); c.stroke();
+    c.beginPath(); c.roundRect ? c.roundRect(-o.w / 2, -o.h / 8, o.w / 3.2, o.h / 5, 6) : c.rect(-o.w / 2, -o.h / 8, o.w / 3.2, o.h / 5); c.fill(); c.stroke();
+    c.beginPath(); c.roundRect ? c.roundRect(o.w / 6, -o.h / 3, o.w / 3.2, o.h / 5, 6) : c.rect(o.w / 6, -o.h / 3, o.w / 3.2, o.h / 5); c.fill(); c.stroke();
+  } else {
+    // detrito de cidade (caixote com faixa de perigo) — mundo final, mais difícil
+    c.fillStyle = '#5a5266'; c.strokeStyle = '#201c2a'; c.lineWidth = 2.4;
+    c.fillRect(-o.w / 2, -o.h / 2, o.w, o.h); c.strokeRect(-o.w / 2, -o.h / 2, o.w, o.h);
+    c.fillStyle = '#ffd23a';
+    for (let i = -o.w / 2; i < o.w / 2; i += 14) { c.save(); c.beginPath(); c.rect(-o.w / 2, -6, o.w, 12); c.clip(); c.fillRect(i, -10, 7, 20); c.restore(); }
   }
   c.restore();
 }
@@ -204,7 +225,7 @@ addEventListener('keyup', e => {
 function update(dt) {
   if (estado !== 'jogando') return;
   t += dt;
-  vel = BASE_V;
+  vel = BASE_V + (worldIndex(dist) === MUNDOS.length - 1 ? 35 : 0);
   dist += vel * dt;
   if (invenc > 0) invenc -= dt;
   if (shake > 0) shake -= dt;
@@ -237,11 +258,11 @@ function update(dt) {
   portais = portais.filter(p => p.y > -90);
   if (anuncioT > 0) anuncioT -= dt;
 
-  // ---- obstáculos ----
+  // ---- obstáculos (mundo final = CIDADE aparece mais rápido, mais difícil) ----
   spawnT -= dt;
   if (spawnT <= 0) {
     criarObstaculo();
-    spawnT = 1.0;
+    spawnT = worldIndex(dist) === MUNDOS.length - 1 ? 0.72 : 1.0;
   }
   for (const o of obst) {
     o.y -= vel * dt;
