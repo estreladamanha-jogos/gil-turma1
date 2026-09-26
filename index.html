@@ -124,6 +124,7 @@ const MUNDOS = [
   { nome: 'CÉU',       topo: '#3a7bd5', fundo: '#0d2a55', pilar: '#2a5a9a', luz: '#eaffff' },
   { nome: 'DESERTO',   topo: '#7a5320', fundo: '#2a1a08', pilar: '#a06a2a', luz: '#ffd97a' },
   { nome: 'CIDADE',    topo: '#241246', fundo: '#0a0618', pilar: '#3a2a6a', luz: '#ff5ec6' },
+  { nome: 'DOCES',     topo: '#ff9fd0', fundo: '#c23f8a', pilar: '#e8c99a', luz: '#fff3b0' },
 ];
 function worldIndex(d) { return Math.floor(d / SEG) % MUNDOS.length; }
 
@@ -137,7 +138,7 @@ let anuncioTxt = '', anuncioT = 0;
 const keys = { left: false, right: false };
 
 /* ---------- escolha de poder (tecla Q) — só de mostrar qual está escolhido ---------- */
-const PODERES = ['ESCUDO', 'DASH', 'INVISIBILIDADE'];
+const PODERES = ['ESCUDO', 'DASH', 'INVISIBILIDADE', 'CLONE'];
 let poderIdx = 0, poderAnuncioT = 0;
 function trocarPoder() {
   if (estado !== 'jogando') return;
@@ -175,13 +176,27 @@ function ativarInvisibilidade() {
   burst(jog.x, PY, '#c9c0ff', 16, 120);
 }
 
-/* ---------- tecla X contada: 1x = escudo, 2x rápido = invisibilidade, 3x rápido = dash ---------- */
+/* ---------- clone (👥): deixa uma cópia parada que engole o 1º obstáculo (também o chiclete) ---------- */
+const CLONE_DURACAO = 4, CLONE_RECARGA = 10;
+let cloneT = 0, cloneCd = 0, cloneX = 0;
+function ativarClone() {
+  if (estado !== 'jogando' || cloneCd > 0) return;
+  cloneT = CLONE_DURACAO; cloneCd = CLONE_RECARGA; cloneX = jog.x;
+  burst(cloneX, PY, '#ffb6e6', 14, 110);
+}
+
+/* ---------- chiclete (mundo DOCES): não tira vida, deixa lento por 3s ---------- */
+const LENTO_DURACAO = 3;
+let lentoT = 0;
+
+/* ---------- tecla X contada: 1x = escudo, 2x rápido = invisibilidade, 3x rápido = dash, 4x rápido = clone ---------- */
 const X_JANELA = 0.38;
 let xCliques = 0, xCliqueTimer = 0;
 function resolverCliquesX() {
   if (xCliques === 1) ativarEscudo();
   else if (xCliques === 2) ativarInvisibilidade();
-  else if (xCliques >= 3) tentarDash(jog.dir || 1);
+  else if (xCliques === 3) tentarDash(jog.dir || 1);
+  else if (xCliques >= 4) ativarClone();
   xCliques = 0;
 }
 
@@ -201,6 +216,7 @@ function resetar() {
   escudoT = 0; escudoCd = 0; dashT = 0; dashCd = 0; dashFlash = 0; ultimoToqueEsq = -10; ultimoToqueDir = -10;
   poderIdx = 0; poderAnuncioT = 0; invisPoeira = 0;
   invisT = 0; invisCd = 0; xCliques = 0; xCliqueTimer = 0;
+  cloneT = 0; cloneCd = 0; lentoT = 0;
 }
 
 /* ---------- obstáculos: um tipo diferente para cada mundo ---------- */
@@ -242,6 +258,17 @@ function desenharObstaculo(o) {
     c.beginPath(); c.roundRect ? c.roundRect(-o.w / 10, -o.h / 2, o.w / 5, o.h, 8) : c.rect(-o.w / 10, -o.h / 2, o.w / 5, o.h); c.fill(); c.stroke();
     c.beginPath(); c.roundRect ? c.roundRect(-o.w / 2, -o.h / 8, o.w / 3.2, o.h / 5, 6) : c.rect(-o.w / 2, -o.h / 8, o.w / 3.2, o.h / 5); c.fill(); c.stroke();
     c.beginPath(); c.roundRect ? c.roundRect(o.w / 6, -o.h / 3, o.w / 3.2, o.h / 5, 6) : c.rect(o.w / 6, -o.h / 3, o.w / 3.2, o.h / 5); c.fill(); c.stroke();
+  } else if (o.mundo === 'DOCES') {
+    // halo rosa brilhante pra destacar do fundo de doces
+    const halo = c.createRadialGradient(0, 0, 4, 0, 0, o.w * .9);
+    halo.addColorStop(0, 'rgba(255,111,194,.55)'); halo.addColorStop(1, 'rgba(255,111,194,0)');
+    c.fillStyle = halo; c.beginPath(); c.arc(0, 0, o.w * .9, 0, 7); c.fill();
+    // chiclete grudento (não tira vida, só deixa lento)
+    c.fillStyle = '#ff6fc2'; c.strokeStyle = '#c2278f'; c.lineWidth = 3;
+    c.beginPath(); c.ellipse(0, o.h / 8, o.w / 2.2, o.h / 2.4, 0, 0, 7); c.fill(); c.stroke();
+    c.fillStyle = '#ff9ad8';
+    c.beginPath(); c.arc(-o.w / 8, -o.h / 6, o.w / 3.4, 0, 7); c.fill(); c.stroke();
+    c.fillStyle = 'rgba(255,255,255,.5)'; c.beginPath(); c.ellipse(-o.w / 6, -o.h / 6 - 4, o.w / 9, o.h / 14, -.4, 0, 7); c.fill();
   } else {
     // detrito de cidade (caixote com faixa de perigo) — mundo final, mais difícil
     c.fillStyle = '#5a5266'; c.strokeStyle = '#201c2a'; c.lineWidth = 2.4;
@@ -344,7 +371,8 @@ function update(dt) {
   } else {
     const ax = (keys.left ? -1 : 0) + (keys.right ? 1 : 0);
     if (ax) jog.dir = ax;
-    jog.vx += (ax * 300 - jog.vx) * Math.min(1, dt * 10);
+    const velMax = 300 * (lentoT > 0 ? 0.5 : 1); // chiclete deixa 50% mais lento
+    jog.vx += (ax * velMax - jog.vx) * Math.min(1, dt * 10);
     jog.x = clamp(jog.x + jog.vx * dt, 34, W - 34);
   }
 
@@ -381,6 +409,20 @@ function update(dt) {
   }
   obst = obst.filter(o => o.y > -80 && !o.morto);
 
+  // ---- clone: engole o primeiro obstáculo (inclusive chiclete) que chegar perto ----
+  if (cloneCd > 0) cloneCd -= dt;
+  if (cloneT > 0) {
+    cloneT -= dt;
+    for (const o of obst) {
+      if (o.morto) continue;
+      if (Math.abs(o.x - cloneX) < o.w * .55 + 16 && Math.abs(o.y - PY) < o.h * .55 + 30) {
+        o.morto = true; cloneT = 0;
+        burst(o.x, o.y, '#ffb6e6', 16, 150);
+        break;
+      }
+    }
+  }
+
   // ---- cristais ----
   gemT -= dt;
   if (gemT <= 0) { gems.push({ x: rnd(40, W - 40), y: H + 30 }); gemT = .75; }
@@ -399,10 +441,12 @@ function update(dt) {
     if (hb.x < ox + ow && hb.x + hb.w > ox && hb.y < oy + oh && hb.y + hb.h > oy) {
       if (invenc > 0) continue;
       if (escudoT > 0) { o.morto = true; escudoT = Math.min(escudoT, .35); burst(o.x, o.y, '#7ad9ff', 14, 160); continue; }
+      if (o.mundo === 'DOCES') { o.morto = true; lentoT = LENTO_DURACAO; burst(o.x, o.y, '#ff6fc2', 12, 120); continue; }
       levarDano(o);
       break;
     }
   }
+  if (lentoT > 0) lentoT -= dt;
 
   // ---- partículas ----
   for (const p of fx) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= .96; p.vy *= .96; p.life -= dt; }
@@ -435,6 +479,13 @@ function fundo() {
     if (mAtual.nome === 'LAVA') { c.fillStyle = mAtual.luz; c.beginPath(); c.arc(px, py, 2.5, 0, 7); c.fill(); }
     else if (mAtual.nome === 'CÉU') { c.fillStyle = '#fff'; c.beginPath(); c.ellipse(px, py, 20, 8, 0, 0, 7); c.fill(); }
     else if (mAtual.nome === 'DESERTO') { c.fillStyle = mAtual.luz; c.beginPath(); c.arc(px, py, 1.6, 0, 7); c.fill(); }
+    else if (mAtual.nome === 'DOCES') {
+      // granulado colorido caindo
+      c.save(); c.translate(px, py); c.rotate(t * 2 + i);
+      c.fillStyle = ['#ff6fc2', '#7ad9ff', '#ffe94a', '#a0ff8e'][i % 4];
+      c.fillRect(-3, -1.4, 6, 2.8);
+      c.restore();
+    }
     else { c.fillStyle = mAtual.luz; c.fillRect(px, py, 3, 3); }
   }
   c.globalAlpha = 1;
@@ -476,7 +527,7 @@ function fundo() {
         c.beginPath(); c.roundRect ? c.roundRect(px - 20, py - 6, 14, 10, 5) : c.rect(px - 20, py - 6, 14, 10); c.fill(); c.stroke();
         c.beginPath(); c.roundRect ? c.roundRect(px + 8, py - 16, 14, 10, 5) : c.rect(px + 8, py - 16, 14, 10); c.fill(); c.stroke();
       }
-    } else {
+    } else if (mAtual.nome === 'CIDADE') {
       // prédio com janelas acesas
       const alt = 60 + (i % 3) * 30, larg = 34;
       c.fillStyle = mAtual.pilar; c.strokeStyle = '#000'; c.lineWidth = 1.6;
@@ -484,6 +535,14 @@ function fundo() {
       c.fillStyle = mAtual.luz;
       for (let j = 0; j < Math.floor(alt / 16); j++) for (let k = 0; k < 2; k++) {
         if ((i + j + k) % 3) c.fillRect(px - larg / 2 + 6 + k * 16, py - alt + 8 + j * 16, 8, 8);
+      }
+    } else {
+      // biscoito gigante com gotas de chocolate (mundo DOCES)
+      c.fillStyle = '#e8c99a'; c.strokeStyle = '#a97a3a'; c.lineWidth = 2.4;
+      c.beginPath(); c.arc(px, py, 32, 0, 7); c.fill(); c.stroke();
+      c.fillStyle = '#6b3a1e';
+      for (const [dx, dy] of [[-14, -10], [10, -14], [-6, 8], [14, 10], [0, 0]]) {
+        c.beginPath(); c.arc(px + dx, py + dy, 4, 0, 7); c.fill();
       }
     }
   }
@@ -539,6 +598,13 @@ function desenhar() {
       c.restore();
     }
     c.globalAlpha = 1;
+  }
+
+  // ---- clone parado (👥) esperando engolir um obstáculo ----
+  if (cloneT > 0) {
+    c.save(); c.globalAlpha = .8;
+    drawFagulha(c, cloneX, PY + 12, .42, t, { vx: 0, glow: '#ffb6e6' });
+    c.restore();
   }
 
   // ---- brilho fantasma quando invisível ----
@@ -625,9 +691,9 @@ function telas() {
     c.fillStyle = 'rgba(5,5,20,.72)'; c.fillRect(0, 0, W, H);
     texto('FAGULHA', W / 2, 150, 34, '#ffe9a8');
     texto('QUEDA ENTRE MUNDOS', W / 2, 200, 12, '#7af6ff');
-    texto('LAVA · CÉU · DESERTO · CIDADE', W / 2, 226, 8, '#ffd97a');
+    texto('LAVA · CÉU · DESERTO · CIDADE · DOCES', W / 2, 226, 8, '#ffd97a');
     drawFagulha(c, W / 2, 345, .9, performance.now() / 1000, { pose: 'stand' });
-    texto('X 1x=ESCUDO 2x=INVISÍVEL 3x=DASH', W / 2, 452, 8, '#7ad9ff');
+    texto('X 1x=ESCUDO 2x=INVISÍVEL 3x=DASH 4x=CLONE', W / 2, 452, 7, '#7ad9ff');
     texto('ESPAÇO/◀◀▶▶ TAMBÉM DÁ DASH · Q TROCA PODER', W / 2, 470, 7, '#c9c0ff');
     if (Math.floor(performance.now() / 500) % 2) texto('APERTE ESPAÇO', W / 2, 520, 14, '#fff');
   } else if (estado === 'gameover') {
