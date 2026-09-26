@@ -160,18 +160,26 @@ function criarObstaculo() {
 function desenharObstaculo(o) {
   c.save(); c.translate(o.x, o.y);
   if (o.mundo === 'LAVA') {
-    // rocha vulcânica com rachaduras brilhando
-    c.fillStyle = '#241614'; c.strokeStyle = '#0d0808'; c.lineWidth = 2.4;
+    // halo brilhante pra destacar do fundo escuro
+    const halo = c.createRadialGradient(0, 0, 4, 0, 0, o.w * .9);
+    halo.addColorStop(0, 'rgba(255,170,60,.55)'); halo.addColorStop(1, 'rgba(255,170,60,0)');
+    c.fillStyle = halo; c.beginPath(); c.arc(0, 0, o.w * .9, 0, 7); c.fill();
+    // rocha vulcânica vermelha viva com rachaduras brilhando
+    c.fillStyle = '#7a2a14'; c.strokeStyle = '#ffb347'; c.lineWidth = 3;
     c.beginPath(); c.moveTo(-o.w / 2, o.h / 2); c.lineTo(-o.w / 2 + 6, -o.h / 3); c.lineTo(-o.w / 5, -o.h / 2); c.lineTo(o.w / 4, -o.h / 2 + 4);
     c.lineTo(o.w / 2 - 4, -o.h / 5); c.lineTo(o.w / 2, o.h / 2); c.closePath(); c.fill(); c.stroke();
-    c.strokeStyle = '#ff6a2b'; c.lineWidth = 2; c.beginPath();
+    c.strokeStyle = '#ffe94a'; c.lineWidth = 2.4; c.beginPath();
     c.moveTo(-o.w / 6, -o.h / 4); c.lineTo(0, 0); c.lineTo(o.w / 8, o.h / 3); c.stroke();
   } else if (o.mundo === 'CÉU') {
-    // nuvem de tempestade com raio
-    c.fillStyle = '#39406a'; c.strokeStyle = '#20264a'; c.lineWidth = 2;
+    // halo branco pra destacar do céu azul
+    const halo = c.createRadialGradient(0, 0, 4, 0, 0, o.w * .9);
+    halo.addColorStop(0, 'rgba(255,255,255,.5)'); halo.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = halo; c.beginPath(); c.arc(0, 0, o.w * .9, 0, 7); c.fill();
+    // nuvem de tempestade quase preta com contorno branco e raio
+    c.fillStyle = '#191b2e'; c.strokeStyle = '#ffffff'; c.lineWidth = 2.6;
     c.beginPath(); c.arc(-o.w / 4, 4, o.h / 3, 0, 7); c.arc(0, -6, o.h / 2.6, 0, 7); c.arc(o.w / 4, 4, o.h / 3, 0, 7); c.fill(); c.stroke();
-    c.fillStyle = '#ffe94a'; c.beginPath();
-    c.moveTo(4, o.h / 6); c.lineTo(-8, o.h / 2); c.lineTo(2, o.h / 2); c.lineTo(-6, o.h); c.lineTo(14, o.h / 2.6); c.lineTo(2, o.h / 2.6); c.closePath(); c.fill();
+    c.fillStyle = '#ffe94a'; c.strokeStyle = '#7a5e00'; c.lineWidth = 1; c.beginPath();
+    c.moveTo(4, o.h / 6); c.lineTo(-8, o.h / 2); c.lineTo(2, o.h / 2); c.lineTo(-6, o.h); c.lineTo(14, o.h / 2.6); c.lineTo(2, o.h / 2.6); c.closePath(); c.fill(); c.stroke();
   } else if (o.mundo === 'DESERTO') {
     // cacto do deserto
     c.fillStyle = '#4a8a4a'; c.strokeStyle = '#2a5a2a'; c.lineWidth = 2.4;
@@ -225,7 +233,12 @@ addEventListener('keyup', e => {
 function update(dt) {
   if (estado !== 'jogando') return;
   t += dt;
-  vel = BASE_V + (worldIndex(dist) === MUNDOS.length - 1 ? 35 : 0);
+  // acelera um pouco a cada mundo, e dispara pra valer na reta final da cidade
+  const idxMundo = worldIndex(dist);
+  const progressoMundo = (dist % SEG) / SEG;
+  let extraVel = idxMundo * 14;
+  if (idxMundo === MUNDOS.length - 1 && progressoMundo > 0.65) extraVel += 60;
+  vel = BASE_V + extraVel;
   dist += vel * dt;
   if (invenc > 0) invenc -= dt;
   if (shake > 0) shake -= dt;
@@ -248,7 +261,7 @@ function update(dt) {
   for (const p of portais) p.y -= vel * dt;
   for (const p of portais) {
     if (!p.passou && Math.abs(p.y - PY) < 18) {
-      p.passou = true; flash = .28; shake = .2;
+      p.passou = true; flash = .5; shake = .2;
       burst(jog.x, PY, p.corB, 22, 170);
       const proxNome = MUNDOS[worldIndex(p.fronteira)].nome;
       anuncioTxt = proxNome; anuncioT = 2.2;
@@ -262,7 +275,8 @@ function update(dt) {
   spawnT -= dt;
   if (spawnT <= 0) {
     criarObstaculo();
-    spawnT = worldIndex(dist) === MUNDOS.length - 1 ? 0.72 : 1.0;
+    if (idxMundo === MUNDOS.length - 1) spawnT = progressoMundo > 0.65 ? 0.55 : 0.72;
+    else spawnT = 1.0;
   }
   for (const o of obst) {
     o.y -= vel * dt;
@@ -403,7 +417,7 @@ function desenhar() {
   c.globalAlpha = 1;
   c.restore();
 
-  if (flash > 0) { c.fillStyle = `rgba(255,255,255,${clamp(flash / .28, 0, 1) * .55})`; c.fillRect(0, 0, W, H); }
+  if (flash > 0) { c.fillStyle = `rgba(255,255,255,${clamp(flash / .5, 0, 1) * .85})`; c.fillRect(0, 0, W, H); }
 
   if (anuncioT > 0 && estado === 'jogando') {
     const al = clamp(Math.min(anuncioT, 2.2 - anuncioT + .5) / .5, 0, 1);
