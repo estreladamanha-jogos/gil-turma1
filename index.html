@@ -117,7 +117,7 @@ const BASE_V = 230;             // velocidade da queda (pixels por segundo)
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const rnd = (a, b) => a + Math.random() * (b - a);
 
-/* ---------- MUNDOS: troca a cada 250 metros ---------- */
+/* ---------- MUNDOS: cada um com seu tamanho (DOCES é mais longo, por causa do chefão) ---------- */
 const SEG = 2500;               // 2500 = 250 metros (dist/10 = metros)
 const MUNDOS = [
   { nome: 'LAVA',     topo: '#3a0d0d', fundo: '#120404', pilar: '#5a1a12', luz: '#ff6a2b' },
@@ -126,7 +126,10 @@ const MUNDOS = [
   { nome: 'CIDADE',    topo: '#241246', fundo: '#0a0618', pilar: '#3a2a6a', luz: '#ff5ec6' },
   { nome: 'DOCES',     topo: '#ff9fd0', fundo: '#c23f8a', pilar: '#e8c99a', luz: '#fff3b0' },
 ];
-function worldIndex(d) { return Math.floor(d / SEG) % MUNDOS.length; }
+const SEGS = [SEG, SEG, SEG, SEG, SEG * 2];
+const CUM = []; (function () { let s = 0; for (const v of SEGS) { s += v; CUM.push(s); } })();
+function worldIndex(d) { for (let i = 0; i < CUM.length; i++) if (d < CUM[i]) return i; return CUM.length - 1; }
+function worldStart(i) { return i === 0 ? 0 : CUM[i - 1]; }
 
 let estado = 'inicio';          // inicio | jogando | gameover | vitoria
 let t = 0, dist = 0, vel = BASE_V;
@@ -189,6 +192,23 @@ function ativarClone() {
 const LENTO_DURACAO = 3;
 let lentoT = 0;
 
+/* ---------- tiro de doce (tecla V): usado pra derrotar o chefão ---------- */
+const TIRO_RECARGA = 0.22;
+let tiros = [], tiroCd = 0;
+function atirarDoce() {
+  if (estado !== 'jogando' || tiroCd > 0) return;
+  tiroCd = TIRO_RECARGA;
+  tiros.push({ x: jog.x, y: PY - 30, vy: -520 });
+  burst(jog.x, PY - 30, '#ff6fc2', 4, 60);
+}
+
+/* ---------- chefão DOCES: uma bala gigante, precisa de vários tiros de doce ---------- */
+const BOSS_HP_MAX = 6;
+let bossAtiva = false, bossDerrotado = false, bossHp = 0, bossX = W / 2, bossY = 0, bossFlashT = 0;
+function spawnBoss() {
+  bossAtiva = true; bossHp = BOSS_HP_MAX; bossX = W / 2; bossY = 130;
+}
+
 /* ---------- tecla X contada: 1x = escudo, 2x rápido = invisibilidade, 3x rápido = dash, 4x rápido = clone ---------- */
 const X_JANELA = 0.38;
 let xCliques = 0, xCliqueTimer = 0;
@@ -217,12 +237,14 @@ function resetar() {
   poderIdx = 0; poderAnuncioT = 0; invisPoeira = 0;
   invisT = 0; invisCd = 0; xCliques = 0; xCliqueTimer = 0;
   cloneT = 0; cloneCd = 0; lentoT = 0;
+  tiros = []; tiroCd = 0; bossAtiva = false; bossDerrotado = false; bossHp = 0; bossFlashT = 0;
 }
 
-/* ---------- obstáculos: um tipo diferente para cada mundo ---------- */
+/* ---------- obstáculos: um tipo diferente para cada mundo (DOCES tem dois, pra dar dificuldade) ---------- */
 function criarObstaculo() {
   const mundo = MUNDOS[worldIndex(dist)].nome;
-  obst.push({ mundo, x: rnd(50, W - 50), y: H + 40, w: rnd(50, 88), h: rnd(40, 56), sd: Math.random() });
+  const tipo = mundo === 'DOCES' ? (Math.random() < 0.5 ? 'chiclete' : 'bala_dura') : null;
+  obst.push({ mundo, tipo, x: rnd(50, W - 50), y: H + 40, w: rnd(50, 88), h: rnd(40, 56), sd: Math.random() });
 }
 
 function desenharObstaculo(o) {
@@ -258,7 +280,7 @@ function desenharObstaculo(o) {
     c.beginPath(); c.roundRect ? c.roundRect(-o.w / 10, -o.h / 2, o.w / 5, o.h, 8) : c.rect(-o.w / 10, -o.h / 2, o.w / 5, o.h); c.fill(); c.stroke();
     c.beginPath(); c.roundRect ? c.roundRect(-o.w / 2, -o.h / 8, o.w / 3.2, o.h / 5, 6) : c.rect(-o.w / 2, -o.h / 8, o.w / 3.2, o.h / 5); c.fill(); c.stroke();
     c.beginPath(); c.roundRect ? c.roundRect(o.w / 6, -o.h / 3, o.w / 3.2, o.h / 5, 6) : c.rect(o.w / 6, -o.h / 3, o.w / 3.2, o.h / 5); c.fill(); c.stroke();
-  } else if (o.mundo === 'DOCES') {
+  } else if (o.mundo === 'DOCES' && o.tipo === 'chiclete') {
     // halo rosa brilhante pra destacar do fundo de doces
     const halo = c.createRadialGradient(0, 0, 4, 0, 0, o.w * .9);
     halo.addColorStop(0, 'rgba(255,111,194,.55)'); halo.addColorStop(1, 'rgba(255,111,194,0)');
@@ -269,6 +291,19 @@ function desenharObstaculo(o) {
     c.fillStyle = '#ff9ad8';
     c.beginPath(); c.arc(-o.w / 8, -o.h / 6, o.w / 3.4, 0, 7); c.fill(); c.stroke();
     c.fillStyle = 'rgba(255,255,255,.5)'; c.beginPath(); c.ellipse(-o.w / 6, -o.h / 6 - 4, o.w / 9, o.h / 14, -.4, 0, 7); c.fill();
+  } else if (o.mundo === 'DOCES') {
+    // halo vermelho pra destacar do fundo de doces
+    const halo = c.createRadialGradient(0, 0, 4, 0, 0, o.w * .9);
+    halo.addColorStop(0, 'rgba(255,60,60,.5)'); halo.addColorStop(1, 'rgba(255,60,60,0)');
+    c.fillStyle = halo; c.beginPath(); c.arc(0, 0, o.w * .9, 0, 7); c.fill();
+    // bala dura listrada (essa tira vida! mais difícil que o chiclete)
+    c.fillStyle = '#fff'; c.strokeStyle = '#c21f1f'; c.lineWidth = 3;
+    c.beginPath(); c.arc(0, 0, o.w / 2.2, 0, 7); c.fill(); c.stroke();
+    c.save(); c.beginPath(); c.arc(0, 0, o.w / 2.2, 0, 7); c.clip();
+    c.strokeStyle = '#ff3b3b'; c.lineWidth = 8;
+    for (let a = -2; a < 3; a++) { c.beginPath(); c.moveTo(-o.w, a * 14 - o.h / 2); c.lineTo(o.w, a * 14 + o.h / 2); c.stroke(); }
+    c.restore();
+    c.strokeStyle = '#c21f1f'; c.lineWidth = 3; c.beginPath(); c.arc(0, 0, o.w / 2.2, 0, 7); c.stroke();
   } else {
     // detrito de cidade (caixote com faixa de perigo) — mundo final, mais difícil
     c.fillStyle = '#5a5266'; c.strokeStyle = '#201c2a'; c.lineWidth = 2.4;
@@ -302,7 +337,7 @@ function desenharPortal(p) {
 /* ---------- entrada ---------- */
 addEventListener('keydown', e => {
   const k = e.code;
-  if (['Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Tab', 'KeyX', 'KeyQ'].includes(k)) e.preventDefault();
+  if (['Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Tab', 'KeyX', 'KeyQ', 'KeyV'].includes(k)) e.preventDefault();
   if (estado !== 'jogando') { if (k === 'Space' || k === 'Enter' || k === 'KeyR') resetar(); return; }
   if (k === 'ArrowLeft' || k === 'KeyA') {
     keys.left = true;
@@ -323,6 +358,7 @@ addEventListener('keydown', e => {
   if (k === 'KeyX' && !e.repeat) { xCliques++; xCliqueTimer = X_JANELA; }
   if (k === 'Space' && !e.repeat) tentarDash(jog.dir || 1);
   if (k === 'KeyQ' && !e.repeat) trocarPoder();
+  if (k === 'KeyV') atirarDoce();
 });
 addEventListener('keyup', e => {
   if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = false;
@@ -333,9 +369,9 @@ addEventListener('keyup', e => {
 function update(dt) {
   if (estado !== 'jogando') return;
   t += dt;
-  // acelera um pouco a cada mundo, e a cidade (fase final) fica bem mais rápida
+  // acelera um pouco a cada mundo, e o mundo final fica bem mais rápido
   const idxMundo = worldIndex(dist);
-  const progressoMundo = (dist % SEG) / SEG;
+  const progressoMundo = (dist - worldStart(idxMundo)) / SEGS[idxMundo];
   let extraVel = idxMundo * 14;
   if (idxMundo === MUNDOS.length - 1) {
     extraVel += 70;
@@ -376,9 +412,9 @@ function update(dt) {
     jog.x = clamp(jog.x + jog.vx * dt, 34, W - 34);
   }
 
-  // ---- portal: nasce um pouco antes da fronteira de 250 m e cai até o Fagulha ----
+  // ---- portal: nasce um pouco antes da fronteira do mundo e cai até o Fagulha (DOCES não tem portal depois, só o chefão) ----
   const leadDist = H + 40 - PY;
-  const fronteira = (Math.floor(dist / SEG) + 1) * SEG;
+  const fronteira = idxMundo < CUM.length - 1 ? CUM[idxMundo] : Infinity;
   if (fronteira - dist <= leadDist && ultimaFronteira !== fronteira) {
     const atual = MUNDOS[worldIndex(dist)], prox = MUNDOS[worldIndex(fronteira)];
     portais.push({ x: W / 2, y: H + 40, fronteira, passou: false, corA: atual.luz, corB: prox.luz });
@@ -441,19 +477,39 @@ function update(dt) {
     if (hb.x < ox + ow && hb.x + hb.w > ox && hb.y < oy + oh && hb.y + hb.h > oy) {
       if (invenc > 0) continue;
       if (escudoT > 0) { o.morto = true; escudoT = Math.min(escudoT, .35); burst(o.x, o.y, '#7ad9ff', 14, 160); continue; }
-      if (o.mundo === 'DOCES') { o.morto = true; lentoT = LENTO_DURACAO; burst(o.x, o.y, '#ff6fc2', 12, 120); continue; }
+      if (o.mundo === 'DOCES' && o.tipo === 'chiclete') { o.morto = true; lentoT = LENTO_DURACAO; burst(o.x, o.y, '#ff6fc2', 12, 120); continue; }
       levarDano(o);
       break;
     }
   }
   if (lentoT > 0) lentoT -= dt;
 
+  // ---- chefão do mundo DOCES: aparece pouco depois de entrar na fase ----
+  if (tiroCd > 0) tiroCd -= dt;
+  if (bossFlashT > 0) bossFlashT -= dt;
+  if (idxMundo === MUNDOS.length - 1 && !bossAtiva && !bossDerrotado && progressoMundo > 0.15) {
+    spawnBoss();
+  }
+  if (bossAtiva) {
+    bossX = W / 2 + Math.sin(t * 1.1) * 90;
+  }
+  for (const tiro of tiros) tiro.y += tiro.vy * dt;
+  tiros = tiros.filter(tiro => {
+    if (bossAtiva && Math.abs(tiro.x - bossX) < 54 && Math.abs(tiro.y - bossY) < 60) {
+      bossHp--; bossFlashT = .15;
+      burst(tiro.x, tiro.y, '#ffffff', 10, 120);
+      if (bossHp <= 0) {
+        bossAtiva = false; bossDerrotado = true; estado = 'vitoria';
+        burst(bossX, bossY, '#ffe9a8', 40, 220);
+      }
+      return false;
+    }
+    return tiro.y > -30;
+  });
+
   // ---- partículas ----
   for (const p of fx) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= .96; p.vy *= .96; p.life -= dt; }
   fx = fx.filter(p => p.life > 0);
-
-  // ---- fim de jogo: atravessou os 4 mundos ----
-  if (dist >= SEG * MUNDOS.length) { estado = 'vitoria'; }
 }
 
 function levarDano(o) {
@@ -565,6 +621,33 @@ function desenhar() {
   }
   for (const o of obst) desenharObstaculo(o);
 
+  // ---- chefão de DOCES: bala gigante listrada com vida em cima ----
+  if (bossAtiva) {
+    c.save(); c.translate(bossX, bossY);
+    if (bossFlashT > 0) { c.shadowColor = '#fff'; c.shadowBlur = 30; }
+    c.fillStyle = '#fff'; c.strokeStyle = '#c21f1f'; c.lineWidth = 5;
+    c.beginPath(); c.arc(0, 0, 62, 0, 7); c.fill(); c.stroke();
+    c.save(); c.beginPath(); c.arc(0, 0, 62, 0, 7); c.clip();
+    c.strokeStyle = '#ff3b3b'; c.lineWidth = 20;
+    for (let a = -4; a < 5; a++) { c.beginPath(); c.moveTo(-90, a * 22 - 60); c.lineTo(90, a * 22 + 60); c.stroke(); }
+    c.restore();
+    c.strokeStyle = '#c21f1f'; c.lineWidth = 5; c.beginPath(); c.arc(0, 0, 62, 0, 7); c.stroke();
+    c.restore();
+    // vidinhas do chefão
+    for (let i = 0; i < BOSS_HP_MAX; i++) {
+      c.fillStyle = i < bossHp ? '#ff3b6b' : 'rgba(255,255,255,.25)';
+      c.beginPath(); c.arc(bossX - (BOSS_HP_MAX - 1) * 9 + i * 18, bossY - 84, 6, 0, 7); c.fill();
+    }
+  }
+
+  // ---- tiros de doce (tecla V) ----
+  for (const tiro of tiros) {
+    c.save(); c.translate(tiro.x, tiro.y);
+    c.fillStyle = '#ff6fc2'; c.strokeStyle = '#c2278f'; c.lineWidth = 2;
+    c.beginPath(); c.ellipse(0, 0, 6, 9, 0, 0, 7); c.fill(); c.stroke();
+    c.restore();
+  }
+
   // ---- escudo (bolha ao redor do Fagulha) ----
   if (escudoT > 0) {
     c.save(); c.translate(jog.x, PY + 4);
@@ -660,7 +743,8 @@ function hud() {
   c.font = '20px sans-serif'; c.textAlign = 'left'; c.textBaseline = 'middle';
   for (let i = 0; i < 3; i++) c.fillText(i < vidas ? '❤️' : '🖤', 12 + i * 26, 22);
   texto('💎 ' + cristais, W - 14, 22, 12, '#7af6ff', 'right');
-  const pr = clamp((dist % SEG) / SEG, 0, 1);
+  const idxHud = worldIndex(dist);
+  const pr = clamp((dist - worldStart(idxHud)) / SEGS[idxHud], 0, 1);
   c.fillStyle = 'rgba(0,0,0,.45)'; c.fillRect(W - 14, 44, 6, 140);
   c.fillStyle = '#7CFF9E'; c.fillRect(W - 14, 44, 6, 140 * pr);
   texto(Math.floor(dist / 10) + ' m', W - 11, 196, 8, '#fff', 'right');
@@ -694,7 +778,7 @@ function telas() {
     texto('LAVA · CÉU · DESERTO · CIDADE · DOCES', W / 2, 226, 8, '#ffd97a');
     drawFagulha(c, W / 2, 345, .9, performance.now() / 1000, { pose: 'stand' });
     texto('X 1x=ESCUDO 2x=INVISÍVEL 3x=DASH 4x=CLONE', W / 2, 452, 7, '#7ad9ff');
-    texto('ESPAÇO/◀◀▶▶ TAMBÉM DÁ DASH · Q TROCA PODER', W / 2, 470, 7, '#c9c0ff');
+    texto('V = ATIRA DOCE NO CHEFÃO · Q TROCA PODER', W / 2, 470, 7, '#c9c0ff');
     if (Math.floor(performance.now() / 500) % 2) texto('APERTE ESPAÇO', W / 2, 520, 14, '#fff');
   } else if (estado === 'gameover') {
     c.fillStyle = 'rgba(30,0,10,.78)'; c.fillRect(0, 0, W, H);
@@ -703,7 +787,7 @@ function telas() {
     if (Math.floor(performance.now() / 500) % 2) texto('ESPAÇO: JOGAR DE NOVO', W / 2, 400, 11, '#fff');
   } else if (estado === 'vitoria') {
     c.fillStyle = 'rgba(0,20,10,.78)'; c.fillRect(0, 0, W, H);
-    texto('CRUZOU OS 5 MUNDOS!', W / 2, 170, 18, '#7CFF9E');
+    texto('DERROTOU O CHEFÃO DE DOCES!', W / 2, 170, 14, '#7CFF9E');
     drawFagulha(c, W / 2, 300, .95, performance.now() / 1000, { pose: 'cheer', glow: '#7CFF9E' });
     texto('💎 ' + cristais, W / 2, 470, 16, '#7af6ff');
     if (Math.floor(performance.now() / 500) % 2) texto('ESPAÇO: JOGAR DE NOVO', W / 2, 540, 11, '#fff');
