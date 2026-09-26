@@ -145,14 +145,15 @@ function ativarEscudo() {
   burst(jog.x, PY, '#7ad9ff', 18, 130);
 }
 
-/* ---------- dash (toque duas vezes rápido na mesma seta) ---------- */
+/* ---------- dash (toque duas vezes rápido na mesma seta, ou ESPAÇO pro lado que já está olhando) ---------- */
 const DASH_JANELA = 0.28, DASH_RECARGA = 0.6;
-let dashT = 0, dashCd = 0, dashDir = 0;
+let dashT = 0, dashCd = 0, dashDir = 0, dashFlash = 0;
 let ultimoToqueEsq = -10, ultimoToqueDir = -10;
 function tentarDash(dir) {
   if (estado !== 'jogando' || dashCd > 0) return;
-  dashT = 0.16; dashDir = dir; dashCd = DASH_RECARGA;
+  dashT = 0.16; dashDir = dir; dashCd = DASH_RECARGA; dashFlash = 0.4;
   burst(jog.x, PY, '#bda9ff', 12, 140);
+  burst(jog.x, PY, '#ffffff', 10, 100);
 }
 
 /* ---------- fala o nome do mundo em voz alta ---------- */
@@ -168,7 +169,7 @@ function resetar() {
   estado = 'jogando'; t = 0; dist = 0; vidas = 3; invenc = 0; cristais = 0; shake = 0; flash = 0;
   jog.x = W / 2; jog.vx = 0; obst = []; gems = []; fx = []; portais = []; spawnT = 1; gemT = 1; ultimaFronteira = -1;
   anuncioTxt = ''; anuncioT = 0;
-  escudoT = 0; escudoCd = 0; dashT = 0; dashCd = 0; ultimoToqueEsq = -10; ultimoToqueDir = -10;
+  escudoT = 0; escudoCd = 0; dashT = 0; dashCd = 0; dashFlash = 0; ultimoToqueEsq = -10; ultimoToqueDir = -10;
 }
 
 /* ---------- obstáculos: um tipo diferente para cada mundo ---------- */
@@ -262,6 +263,7 @@ addEventListener('keydown', e => {
     }
   }
   if (k === 'KeyX' && !e.repeat) ativarEscudo();
+  if (k === 'Space' && !e.repeat) tentarDash(jog.dir || 1);
 });
 addEventListener('keyup', e => {
   if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = false;
@@ -288,6 +290,7 @@ function update(dt) {
   if (escudoT > 0) escudoT -= dt;
   if (escudoCd > 0) escudoCd -= dt;
   if (dashCd > 0) dashCd -= dt;
+  if (dashFlash > 0) dashFlash -= dt;
 
   // ---- movimento do Fagulha (dash de dois toques tem prioridade) ----
   if (dashT > 0) {
@@ -470,11 +473,26 @@ function desenhar() {
     c.restore();
   }
 
-  // ---- rastro do dash ----
+  // ---- luz brilhante marcando a ativação do dash ----
+  if (dashFlash > 0) {
+    const al = clamp(dashFlash / 0.4, 0, 1);
+    c.save(); c.translate(jog.x, PY + 4);
+    const gl = c.createRadialGradient(0, 0, 0, 0, 0, 78);
+    gl.addColorStop(0, `rgba(255,255,255,${al * .95})`);
+    gl.addColorStop(.4, `rgba(189,169,255,${al * .55})`);
+    gl.addColorStop(1, 'rgba(189,169,255,0)');
+    c.fillStyle = gl; c.beginPath(); c.arc(0, 0, 78, 0, 7); c.fill();
+    c.restore();
+  }
+
+  // ---- rastro do dash (afterimages brilhantes marcando o caminho) ----
   if (dashT > 0) {
-    for (let i = 1; i <= 3; i++) {
-      c.globalAlpha = .18 * (4 - i);
+    for (let i = 1; i <= 4; i++) {
+      c.save();
+      c.shadowColor = '#bda9ff'; c.shadowBlur = 14;
+      c.globalAlpha = .22 * (5 - i);
       drawFagulha(c, jog.x - dashDir * i * 16, PY + 12, .42, t, { vx: dashDir, glow: null });
+      c.restore();
     }
     c.globalAlpha = 1;
   }
@@ -544,7 +562,7 @@ function telas() {
     texto('QUEDA ENTRE MUNDOS', W / 2, 200, 12, '#7af6ff');
     texto('LAVA · CÉU · DESERTO · CIDADE', W / 2, 226, 8, '#ffd97a');
     drawFagulha(c, W / 2, 345, .9, performance.now() / 1000, { pose: 'stand' });
-    texto('X = ESCUDO   ◀◀ / ▶▶ = DASH', W / 2, 460, 8, '#7ad9ff');
+    texto('X = ESCUDO   ESPAÇO/◀◀▶▶ = DASH', W / 2, 460, 8, '#7ad9ff');
     if (Math.floor(performance.now() / 500) % 2) texto('APERTE ESPAÇO', W / 2, 520, 14, '#fff');
   } else if (estado === 'gameover') {
     c.fillStyle = 'rgba(30,0,10,.78)'; c.fillRect(0, 0, W, H);
