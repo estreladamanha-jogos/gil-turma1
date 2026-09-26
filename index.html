@@ -703,7 +703,7 @@ function telas() {
     if (Math.floor(performance.now() / 500) % 2) texto('ESPAÇO: JOGAR DE NOVO', W / 2, 400, 11, '#fff');
   } else if (estado === 'vitoria') {
     c.fillStyle = 'rgba(0,20,10,.78)'; c.fillRect(0, 0, W, H);
-    texto('CRUZOU OS 4 MUNDOS!', W / 2, 170, 18, '#7CFF9E');
+    texto('CRUZOU OS 5 MUNDOS!', W / 2, 170, 18, '#7CFF9E');
     drawFagulha(c, W / 2, 300, .95, performance.now() / 1000, { pose: 'cheer', glow: '#7CFF9E' });
     texto('💎 ' + cristais, W / 2, 470, 16, '#7af6ff');
     if (Math.floor(performance.now() / 500) % 2) texto('ESPAÇO: JOGAR DE NOVO', W / 2, 540, 11, '#fff');
