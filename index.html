@@ -136,6 +136,25 @@ let spawnT = 1, gemT = 1, ultimaFronteira = -1;
 let anuncioTxt = '', anuncioT = 0;
 const keys = { left: false, right: false };
 
+/* ---------- escudo (tecla X) ---------- */
+const ESCUDO_DURACAO = 2.2, ESCUDO_RECARGA = 8;
+let escudoT = 0, escudoCd = 0;
+function ativarEscudo() {
+  if (estado !== 'jogando' || escudoCd > 0) return;
+  escudoT = ESCUDO_DURACAO; escudoCd = ESCUDO_RECARGA;
+  burst(jog.x, PY, '#7ad9ff', 18, 130);
+}
+
+/* ---------- dash (toque duas vezes rápido na mesma seta) ---------- */
+const DASH_JANELA = 0.28, DASH_RECARGA = 0.6;
+let dashT = 0, dashCd = 0, dashDir = 0;
+let ultimoToqueEsq = -10, ultimoToqueDir = -10;
+function tentarDash(dir) {
+  if (estado !== 'jogando' || dashCd > 0) return;
+  dashT = 0.16; dashDir = dir; dashCd = DASH_RECARGA;
+  burst(jog.x, PY, '#bda9ff', 12, 140);
+}
+
 /* ---------- fala o nome do mundo em voz alta ---------- */
 function falarMundo(nome) {
   if (!('speechSynthesis' in window)) return;
@@ -149,6 +168,7 @@ function resetar() {
   estado = 'jogando'; t = 0; dist = 0; vidas = 3; invenc = 0; cristais = 0; shake = 0; flash = 0;
   jog.x = W / 2; jog.vx = 0; obst = []; gems = []; fx = []; portais = []; spawnT = 1; gemT = 1; ultimaFronteira = -1;
   anuncioTxt = ''; anuncioT = 0;
+  escudoT = 0; escudoCd = 0; dashT = 0; dashCd = 0; ultimoToqueEsq = -10; ultimoToqueDir = -10;
 }
 
 /* ---------- obstáculos: um tipo diferente para cada mundo ---------- */
@@ -223,10 +243,25 @@ function desenharPortal(p) {
 /* ---------- entrada ---------- */
 addEventListener('keydown', e => {
   const k = e.code;
-  if (['Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Tab'].includes(k)) e.preventDefault();
+  if (['Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Tab', 'KeyX'].includes(k)) e.preventDefault();
   if (estado !== 'jogando') { if (k === 'Space' || k === 'Enter' || k === 'KeyR') resetar(); return; }
-  if (k === 'ArrowLeft' || k === 'KeyA') keys.left = true;
-  if (k === 'ArrowRight' || k === 'KeyD') keys.right = true;
+  if (k === 'ArrowLeft' || k === 'KeyA') {
+    keys.left = true;
+    if (!e.repeat) {
+      const agora = performance.now() / 1000;
+      if (agora - ultimoToqueEsq < DASH_JANELA) tentarDash(-1);
+      ultimoToqueEsq = agora;
+    }
+  }
+  if (k === 'ArrowRight' || k === 'KeyD') {
+    keys.right = true;
+    if (!e.repeat) {
+      const agora = performance.now() / 1000;
+      if (agora - ultimoToqueDir < DASH_JANELA) tentarDash(1);
+      ultimoToqueDir = agora;
+    }
+  }
+  if (k === 'KeyX' && !e.repeat) ativarEscudo();
 });
 addEventListener('keyup', e => {
   if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = false;
@@ -250,12 +285,22 @@ function update(dt) {
   if (invenc > 0) invenc -= dt;
   if (shake > 0) shake -= dt;
   if (flash > 0) flash -= dt;
+  if (escudoT > 0) escudoT -= dt;
+  if (escudoCd > 0) escudoCd -= dt;
+  if (dashCd > 0) dashCd -= dt;
 
-  // ---- movimento do Fagulha ----
-  const ax = (keys.left ? -1 : 0) + (keys.right ? 1 : 0);
-  if (ax) jog.dir = ax;
-  jog.vx += (ax * 300 - jog.vx) * Math.min(1, dt * 10);
-  jog.x = clamp(jog.x + jog.vx * dt, 34, W - 34);
+  // ---- movimento do Fagulha (dash de dois toques tem prioridade) ----
+  if (dashT > 0) {
+    dashT -= dt;
+    jog.dir = dashDir;
+    jog.vx = dashDir * 900;
+    jog.x = clamp(jog.x + dashDir * 900 * dt, 34, W - 34);
+  } else {
+    const ax = (keys.left ? -1 : 0) + (keys.right ? 1 : 0);
+    if (ax) jog.dir = ax;
+    jog.vx += (ax * 300 - jog.vx) * Math.min(1, dt * 10);
+    jog.x = clamp(jog.x + jog.vx * dt, 34, W - 34);
+  }
 
   // ---- portal: nasce um pouco antes da fronteira de 250 m e cai até o Fagulha ----
   const leadDist = H + 40 - PY;
@@ -306,6 +351,7 @@ function update(dt) {
     const ox = o.x - o.w * .42, oy = o.y - o.h * .42, ow = o.w * .84, oh = o.h * .84;
     if (hb.x < ox + ow && hb.x + hb.w > ox && hb.y < oy + oh && hb.y + hb.h > oy) {
       if (invenc > 0) continue;
+      if (escudoT > 0) { o.morto = true; escudoT = Math.min(escudoT, .35); burst(o.x, o.y, '#7ad9ff', 14, 160); continue; }
       levarDano(o);
       break;
     }
@@ -413,6 +459,26 @@ function desenhar() {
   }
   for (const o of obst) desenharObstaculo(o);
 
+  // ---- escudo (bolha ao redor do Fagulha) ----
+  if (escudoT > 0) {
+    c.save(); c.translate(jog.x, PY + 4);
+    const pulso = 44 + Math.sin(t * 9) * 4;
+    const g = c.createRadialGradient(0, 0, pulso * .5, 0, 0, pulso);
+    g.addColorStop(0, 'rgba(122,217,255,.05)'); g.addColorStop(.75, 'rgba(122,217,255,.28)'); g.addColorStop(1, 'rgba(122,217,255,0)');
+    c.fillStyle = g; c.beginPath(); c.arc(0, 0, pulso, 0, 7); c.fill();
+    c.strokeStyle = 'rgba(200,240,255,.85)'; c.lineWidth = 2.4; c.beginPath(); c.arc(0, 0, pulso, 0, 7); c.stroke();
+    c.restore();
+  }
+
+  // ---- rastro do dash ----
+  if (dashT > 0) {
+    for (let i = 1; i <= 3; i++) {
+      c.globalAlpha = .18 * (4 - i);
+      drawFagulha(c, jog.x - dashDir * i * 16, PY + 12, .42, t, { vx: dashDir, glow: null });
+    }
+    c.globalAlpha = 1;
+  }
+
   // ---- o Fagulha ----
   const piscando = invenc > 0 && Math.floor(t * 14) % 2 === 0;
   if (estado !== 'gameover') {
@@ -453,6 +519,22 @@ function hud() {
   c.fillStyle = '#7CFF9E'; c.fillRect(W - 14, 44, 6, 140 * pr);
   texto(Math.floor(dist / 10) + ' m', W - 11, 196, 8, '#fff', 'right');
   texto(MUNDOS[worldIndex(dist)].nome, W / 2, 22, 10, '#fff');
+
+  // ---- ícone do escudo (X): brilhante quando pronto, apagado em recarga ----
+  c.save();
+  c.translate(12, 52);
+  const pronto = escudoCd <= 0;
+  c.globalAlpha = pronto ? 1 : .35;
+  c.font = '22px sans-serif'; c.textAlign = 'left'; c.textBaseline = 'middle';
+  c.fillText('🛡️', 0, 0);
+  c.globalAlpha = 1;
+  if (!pronto) {
+    const p = clamp(1 - escudoCd / ESCUDO_RECARGA, 0, 1);
+    c.strokeStyle = 'rgba(255,255,255,.55)'; c.lineWidth = 3; c.beginPath();
+    c.arc(11, 0, 15, -Math.PI / 2, -Math.PI / 2 + p * 6.283); c.stroke();
+  }
+  c.restore();
+  texto(pronto ? 'X: ESCUDO' : Math.ceil(escudoCd) + 's', 40, 52, 7, pronto ? '#7ad9ff' : '#999', 'left');
 }
 
 function telas() {
@@ -462,6 +544,7 @@ function telas() {
     texto('QUEDA ENTRE MUNDOS', W / 2, 200, 12, '#7af6ff');
     texto('LAVA · CÉU · DESERTO · CIDADE', W / 2, 226, 8, '#ffd97a');
     drawFagulha(c, W / 2, 345, .9, performance.now() / 1000, { pose: 'stand' });
+    texto('X = ESCUDO   ◀◀ / ▶▶ = DASH', W / 2, 460, 8, '#7ad9ff');
     if (Math.floor(performance.now() / 500) % 2) texto('APERTE ESPAÇO', W / 2, 520, 14, '#fff');
   } else if (estado === 'gameover') {
     c.fillStyle = 'rgba(30,0,10,.78)'; c.fillRect(0, 0, W, H);
