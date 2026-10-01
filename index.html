@@ -95,10 +95,10 @@ body.toque #touch{display:block}
     <p>Escolha seu herói e vá sempre para a direita!</p>
     <div class="cartas">
       <article class="carta sel" data-c="g"><b>🗡️ Guerreiro</b>Vida alta • Golpe forte de perto<br>Velocidade média<br>✨ Golpe Poderoso • Escudo Protetor</article>
-      <article class="carta" data-c="a"><b>🏹 Arqueira</b>Vida média • Ataque rápido de longe<br>Velocidade muito alta<br>✨ Flecha Mágica • Chuva de Flechas</article>
+      <article class="carta" data-c="a"><b>🏹 Arqueira</b>Vida média • Ataque rápido de longe<br>Velocidade muito alta<br>✨ Flecha Mágica • Escudo Protetor</article>
     </div>
     <button id="btnJogar" class="btn">▶ JOGAR</button>
-    <small>PC: ⬅️➡️/A D andar • Espaço pular • Z atacar • X poder • C trocar • Esc pausa</small>
+    <small>PC: ⬅️➡️/A D andar • Espaço pular • Z atacar • X poder • Q trocar poder • Esc pausa</small>
   </section>
 
   <section id="menuPausa" class="tela oculto">
@@ -116,7 +116,7 @@ body.toque #touch{display:block}
       <li>🔥 Lançadores ficam visíveis — avisam antes de disparar.</li>
       <li>🧪 Poções ficam em lugares altos — explore para achar!</li>
       <li>🍊 100 tangerinas = +1 vida.</li>
-      <li>⌨️ Z/clique esquerdo ataca • X/clique direito poder • C troca poder • Esc/P pausa.</li>
+      <li>⌨️ Z/clique esquerdo ataca • X/clique direito poder • Q troca poder • Esc/P pausa.</li>
     </ul>
     <button id="pTela" class="btn">6. Tela e Rotação (tela cheia)</button>
     <button id="pSair" class="btn">7. Sair para Tela Inicial</button>
@@ -148,7 +148,8 @@ if('ontouchstart' in window||matchMedia('(pointer:coarse)').matches)document.bod
 
 const GY=440,PXM=30; // chão e pixels por metro
 const CLS={g:{nome:'Guerreiro',hp:140,spd:3.6},a:{nome:'Arqueira',hp:90,spd:5.2}};
-const PODERES={g:[['Golpe Poderoso',25],['Escudo Protetor',35]],a:[['Flecha Mágica',20],['Chuva de Flechas',30]]};
+// poder 1 = ataque forte | poder 2 = escudo (gasta menos mana)
+const PODERES={g:[['⚔️ Golpe Poderoso',25],['🛡️ Escudo Protetor',15]],a:[['🏹 Flecha Mágica',20],['🛡️ Escudo Protetor',15]]};
 const FASES=[
  {nome:'FASE 1 — FLORESTA INICIAL',m:400,tg:90,en:7,tipos:['bat','esq'],chefe:'Guardião da Floresta',cor:'#3fbf55',portal:'#4aa8ff'},
  {nome:'FASE 2 — CASTELO DE PEDRA',m:500,tg:110,en:10,tipos:['bat','esq','zum'],chefe:'Senhor do Castelo',cor:'#7a1020',portal:'#ffd24a'},
@@ -194,7 +195,7 @@ const ESC=[[262,330,392,523],[220,262,330,440],[196,233,294,392],[175,208,262,34
 setInterval(()=>{if(!AC||paused||!L)return;const e=ESC[fase];tone(e[Math.floor(rnd()*4)],.7,'triangle',.35,mg);},420);
 
 /* ===================== ENTRADA ===================== */
-const KM={ArrowLeft:'l',a:'l',A:'l',ArrowRight:'r',d:'r',D:'r',ArrowUp:'u',w:'u',W:'u',ArrowDown:'d',s:'d',S:'d',' ':'j',z:'a',Z:'a',x:'pw',X:'pw',c:'sw',C:'sw'};
+const KM={ArrowLeft:'l',a:'l',A:'l',ArrowRight:'r',d:'r',D:'r',ArrowUp:'u',w:'u',W:'u',ArrowDown:'d',s:'d',S:'d',' ':'j',z:'a',Z:'a',x:'pw',X:'pw',c:'sw',C:'sw',q:'sw',Q:'sw'};
 function down(k){if(!I[k])E[k]=1;I[k]=true}
 function up(k){I[k]=false}
 addEventListener('keydown',e=>{
@@ -322,9 +323,9 @@ function usePower(){
   const pw=PODERES[P.cls][P.sel];
   if(P.mana<pw[1]){msg('Sem Mana!',900);return}
   P.mana-=pw[1];sfx('power');part(P.x,P.y-40,'#ffe98a',14);
-  if(P.cls==='g'){if(P.sel===0)P.boost=180;else P.shield=3}
-  else if(P.sel===0)Pr.push({x:P.x+P.face*16,y:P.y-48,vx:P.face*14,vy:0,g:0,dmg:2,pierce:2,hits:new Set(),life:80,mag:1});
-  else for(let i=0;i<7;i++)Pr.push({x:P.x+P.face*10,y:P.y-52,vx:P.face*(4+i*1.1),vy:-9+i*.3,g:.28,dmg:1,pierce:1,hits:new Set(),life:90,mag:0});
+  if(P.sel===1)P.shield=3; // escudo: protege de 3 golpes
+  else if(P.cls==='g')P.boost=180;
+  else Pr.push({x:P.x+P.face*16,y:P.y-48,vx:P.face*14,vy:0,g:0,dmg:2,pierce:2,hits:new Set(),life:80,mag:1});
 }
 function attack(){
   if(P.cls==='g'){P.atk=14;P.cd=22;sfx('hit')}
@@ -355,7 +356,7 @@ function stepPlayer(){
   p.mana=Math.min(100,p.mana+.05);
   const dir=(I.r?1:0)-(I.l?1:0),ch=nearChest();
   if(E.d&&ch)openChest(ch);
-  if(E.sw){p.sel^=1;sfx('troca')}
+  if(E.sw){p.sel^=1;sfx('troca');msg('Poder: '+PODERES[p.cls][p.sel][0]+' ('+PODERES[p.cls][p.sel][1]+' mana)',1200)}
   if(E.pw)usePower();
   if(I.a&&p.cd<=0)attack();
   if(p.cls==='g'&&p.atk===8)meleeHit();
@@ -611,7 +612,7 @@ function hud(){
   $('bMana').style.width=P.mana+'%';
   $('tang').textContent='🍊 '+tang;$('chaves').textContent='🔑 '+chaves;
   const pw=PODERES[P.cls][P.sel];
-  $('poder').textContent='✨ '+pw[0]+' ('+pw[1]+')'+(P.boost>0?' 🔥':'')+(P.shield>0?' 🛡️'+P.shield:'');
+  $('poder').textContent='✨ '+pw[0]+' ('+pw[1]+') [Q]'+(P.boost>0?' 🔥':'')+(P.shield>0?' 🛡️'+P.shield:'');
   if(B&&bossVivo())$('bChefe').style.width=Math.max(0,B.hp/B.max*100)+'%';
   const pr=clamp(P.x/L.len,0,1);$('bProg').style.width=pr*100+'%';
   $('progTxt').textContent=bossOn?'⚔️ Luta com o chefão!':(pr>.8?'⚠️ Chefão à frente!':'Fase '+(fase+1));
