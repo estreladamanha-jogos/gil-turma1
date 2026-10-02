@@ -71,6 +71,12 @@ body.toque #touch{display:block}
 #anuncio strong{display:block;font-size:clamp(26px,7vw,64px);font-weight:900;color:#ffe9a8;text-shadow:0 4px 18px #000,0 0 30px #e04020}
 #anuncio.mostra{animation:anun 3.2s ease both}
 @keyframes anun{0%{opacity:0;transform:translateY(-50%) scale(1.7)}12%{opacity:1;transform:translateY(-50%) scale(1)}85%{opacity:1}100%{opacity:0;transform:translateY(-50%) scale(.96)}}
+/* Cutscene: caixa de diálogo */
+#dialogo{position:fixed;left:50%;top:64px;transform:translateX(-50%);width:min(94vw,680px);z-index:10;background:linear-gradient(rgba(34,24,10,.94),rgba(12,10,6,.96));border:3px solid #ffd978;border-radius:16px;padding:12px 16px 14px;box-shadow:0 6px 24px #000a;cursor:pointer}
+#dialogo h3{margin:0 0 4px;font-family:'Cinzel',serif;font-weight:900;font-size:clamp(15px,3.4vw,20px);color:#ffd978;text-shadow:0 2px 4px #000}
+#dialogo p{margin:0 0 10px;font-size:clamp(15px,3.6vw,20px);font-weight:800;line-height:1.4;min-height:2.8em}
+#dialogo .btn{display:block;margin-left:auto;min-width:150px;padding:8px 18px;font-size:16px}
+body.cena #touch{display:none}
 </style>
 </head>
 <body>
@@ -93,6 +99,7 @@ body.toque #touch{display:block}
   <section id="chefe" class="oculto"><strong id="nomeChefe"></strong><div class="barra"><i id="bChefe"></i></div></section>
   <footer id="prog" class="oculto"><div class="barra prog"><i id="bProg"></i></div><span id="progTxt"></span></footer>
   <div id="msg"></div>
+  <section id="dialogo" class="oculto" aria-live="polite"><h3 id="dlgNome"></h3><p id="dlgTxt"></p><button id="dlgBtn" class="btn">Continuar ▶</button></section>
   <div id="anuncio"><small id="anSub"></small><strong id="anNome"></strong></div>
 
   <nav id="touch">
@@ -189,7 +196,7 @@ const voa=t=>t==='bat'||t==='abe'||t==='mos'; // bichos que voam
 
 /* ===================== ESTADO ===================== */
 let L,P,B,estado='menu',paused=true,clsSel='g',lives=3,tang=0,chaves=0,fase=0,cp,bossOn=false;
-let camPrev=0,ALPHA=1;
+let camPrev=0,ALPHA=1,CENA=null; // CENA = cutscene de introdução (controles bloqueados enquanto existir)
 let camX=0,T=0,shake=0,fog=0,fogT=0,En=[],Hz=[],Pr=[],Pt=[],msgTm=0,Rk=[],rkT=0,ceT=0;
 const I={},E={};
 
@@ -225,12 +232,15 @@ function up(k){I[k]=false}
 addEventListener('keydown',e=>{
   audio();
   if(e.key==='Escape'||e.key==='p'||e.key==='P'){if(estado==='jogo')pausar(!paused);return}
+  if(CENA&&CENA.st==='fala'&&(e.key==='Enter'||e.key===' '||e.key==='z'||e.key==='Z')){avanca();e.preventDefault();return} // avança o diálogo
   const k=KM[e.key];if(k){down(k);e.preventDefault()}
 });
 addEventListener('keyup',e=>{const k=KM[e.key];if(k)up(k)});
 cv.addEventListener('mousedown',e=>{audio();if(e.button===0)down('a');if(e.button===2)down('pw')});
 addEventListener('mouseup',e=>{if(e.button===0)up('a');if(e.button===2)up('pw')});
 cv.addEventListener('contextmenu',e=>e.preventDefault());
+cv.addEventListener('pointerdown',()=>{if(CENA&&CENA.st==='fala')avanca()}); // clicar na tela também avança
+$('dialogo').addEventListener('click',()=>avanca());
 document.querySelectorAll('[data-k]').forEach(b=>{
   const k=b.dataset.k;
   b.addEventListener('pointerdown',e=>{audio();e.preventDefault();down(k);b.classList.add('on')});
@@ -264,7 +274,7 @@ function retratos(){ // desenha o herói de cada carta (usa o mesmo desenho do j
 document.querySelectorAll('.carta').forEach(c=>c.addEventListener('click',()=>{
   document.querySelectorAll('.carta').forEach(x=>x.classList.remove('sel'));c.classList.add('sel');clsSel=c.dataset.c;
 }));
-$('btnJogar').onclick=()=>{audio();lives=3;tang=0;chaves=0;iniciaFase(0);};
+$('btnJogar').onclick=()=>{audio();lives=3;tang=0;chaves=0;iniciaFase(0);iniciaCena();};
 function pausar(v){paused=v;$('menuPausa').classList.toggle('oculto',!v);if(!v)$('ajuda').classList.add('oculto')}
 $('btnPausa').onclick=()=>pausar(true);
 $('pCont').onclick=()=>pausar(false);
@@ -277,10 +287,46 @@ $('pTela').onclick=()=>{ // tela cheia + tenta travar a rotação
   else{document.exitFullscreen?.();screen.orientation?.unlock?.()}
   setTimeout(resize,300);
 };
-$('pSair').onclick=()=>{pausar(false);paused=true;estado='menu';['hud','chefe','prog'].forEach(i=>$(i).classList.add('oculto'));$('menuInicio').classList.remove('oculto')};
+$('pSair').onclick=()=>{CENA=null;$('dialogo').classList.add('oculto');document.body.classList.remove('cena');pausar(false);paused=true;estado='menu';['hud','chefe','prog'].forEach(i=>$(i).classList.add('oculto'));$('menuInicio').classList.remove('oculto')};
 let fimAcao=()=>{};
 $('btnFim').onclick=()=>{$('fim').classList.add('oculto');fimAcao()};
 function telaFim(t,txt,btn,acao){paused=true;$('fimTit').textContent=t;$('fimTxt').textContent=txt;$('btnFim').textContent=btn;fimAcao=acao;$('fim').classList.remove('oculto')}
+/* ===================== CUTSCENE DE INTRODUÇÃO ===================== */
+function falas(){ // textos do diálogo (muda conforme o herói escolhido)
+  const h=clsSel==='g'?'Guerreiro':'Arqueira',ic=clsSel==='g'?'🗡️ ':'🏹 ';
+  return[['👑 Rainha',h+', os monstros levaram a minha Estrela da Manhã!'],['👑 Rainha','Só ela pode me trazer o poder de iluminar o mundo...'],['👑 Rainha','Poderia me ajudar?...'],[ic+h,'Deixa comigo!']];
+}
+function iniciaCena(){ // controles bloqueados, a rainha vem andando até o herói
+  CENA={st:'anda',l:0,tx:0,f:falas()};
+  L.rainha={x:P.x+380,y:GY,face:-1,alpha:1,anim:0,andando:true};
+  document.body.classList.add('cena');$('msg').classList.remove('mostra');
+}
+function mostraFala(){
+  const f=CENA.f[CENA.l];$('dlgNome').textContent=f[0];$('dlgTxt').textContent='';CENA.tx=0;
+  $('dlgBtn').textContent=CENA.l===CENA.f.length-1?'Vamos lá! ▶':'Continuar ▶';$('dialogo').classList.remove('oculto');
+}
+function avanca(){ // 1º clique termina de escrever o texto, 2º vai pro próximo
+  if(!CENA||CENA.st!=='fala')return;
+  const txt=CENA.f[CENA.l][1];sfx('troca');
+  if(CENA.tx<txt.length){CENA.tx=txt.length;$('dlgTxt').textContent=txt;return}
+  CENA.l++;
+  if(CENA.l>=CENA.f.length){ // acabou: libera o jogo
+    $('dialogo').classList.add('oculto');CENA=null;document.body.classList.remove('cena');
+    for(const k in I)I[k]=false;for(const k in E)E[k]=0;
+    msg(FASES[fase].nome,2500);sfx('portal');return;
+  }
+  mostraFala();
+}
+function stepCena(){
+  const q=L.rainha;P.anim++;
+  if(CENA.st==='anda'){
+    q.x-=1.4;q.anim++;
+    if(q.x<=P.x+80){q.andando=false;CENA.st='fala';mostraFala()} // parou perto do herói
+  }else{
+    q.anim++;const txt=CENA.f[CENA.l][1];
+    if(CENA.tx<txt.length){CENA.tx+=.7;$('dlgTxt').textContent=txt.slice(0,Math.floor(CENA.tx))} // texto "digitando"
+  }
+}
 function anuncia(sub,nome){const a=$('anuncio');$('anSub').textContent=sub;$('anNome').textContent=nome;a.classList.remove('mostra');void a.offsetWidth;a.classList.add('mostra')}
 function msg(t,ms){const m=$('msg');m.textContent=t;m.classList.add('mostra');clearTimeout(msgTm);msgTm=setTimeout(()=>m.classList.remove('mostra'),ms||1800)}
 
@@ -349,6 +395,7 @@ function mkEn(t,x,r){
   return{t,x,y,tx:x,ty:y,vx:0,vy:0,hp:d.hp,w:d.w,h:d.h,face:-1,anim:(r?r():rnd())*100,flash:0,alive:true,dead:0,pd:1,tm:0,a:1,mode:0,cd:60};
 }
 function iniciaFase(n){
+  CENA=null;$('dialogo').classList.add('oculto');document.body.classList.remove('cena');
   fase=n;L=build(n);
   const c=CLS[clsSel];
   P={cls:clsSel,x:100,y:GY,vx:0,vy:0,face:1,hp:c.hp,hpMax:c.hp,mana:100,on:null,climb:null,crouch:false,atk:0,cd:0,inv:60,shield:0,boost:0,sel:0,anim:0,sm:0,sq:0,rasgado:false,rcd:0,rope:null,rlen:0,th:0,w:0};
@@ -812,6 +859,8 @@ function stepTeto(){ // fase 3: a cada 15s caem aranhas e morcegos do teto
 /* ===================== LOOP DO JOGO ===================== */
 function step(){
   T++;P.ox=P.x;P.oy=P.y;camPrev=camX;
+  if(L.rainha){if(CENA)stepCena();else{L.rainha.alpha-=.02;L.rainha.anim++;if(L.rainha.alpha<=0)L.rainha=null}} // depois do diálogo a rainha some
+  if(CENA){for(const k in E)E[k]=0;if(T%4===0)hud();return} // controles bloqueados na cutscene
   for(const l of L.leaves){const o=l.y;l.y=l.by+Math.sin(T*.025+l.ph)*16;l.dy=l.y-o}
   for(const r of L.ropes){if(P.rope!==r)r.th+=(r.a*Math.sin(T*.03+r.ph)-r.th)*.08;if(!r.h&&P.x>r.ax-560&&P.x<r.ax-220){r.h=1;msg(r.msg,2800)}}
   stepPlayer();
@@ -1322,6 +1371,29 @@ function drawLanc(l){
     if(warn){cx.strokeStyle='rgba(120,220,255,.8)';cx.lineWidth=3;cx.beginPath();cx.moveTo(x-40,y-62);cx.lineTo(x-80,y-62);cx.stroke()}
   }
 }
+function drawRainha(q){ // rainha de pele negra com vestido branco
+  const t=q.anim,sw=q.andando?Math.sin(t*.2):0,bob=Math.abs(sw)*2;
+  cx.save();cx.translate(q.x,q.y);cx.globalAlpha=Math.max(0,q.alpha);sombra(0,0,26,.3);cx.scale(q.face,1);cx.translate(0,-bob);
+  cx.fillStyle='rgba(255,255,255,.35)';cx.beginPath();cx.moveTo(-6,-84);cx.quadraticCurveTo(-34-sw*4,-50,-30-sw*6,-4);cx.lineTo(-10,-6);cx.quadraticCurveTo(-8,-50,0,-70);cx.fill(); // véu
+  cx.fillStyle=lg(-30,-60,30,0,['#ffffff','#eef1f8','#c9d2e4']);cx.beginPath();cx.moveTo(-9,-62);cx.quadraticCurveTo(-16,-34,-32+sw*2,-2);cx.quadraticCurveTo(0,8,32+sw*2,-2);cx.quadraticCurveTo(16,-34,9,-62);cx.closePath();cx.fill(); // vestido
+  cx.strokeStyle='rgba(150,165,200,.45)';cx.lineWidth=1.5;cx.beginPath();for(let i=-2;i<=2;i++){cx.moveTo(i*3,-44);cx.quadraticCurveTo(i*8,-20,i*13+sw*2,-2)}cx.stroke();
+  cx.fillStyle='#ffffff';rr(-9,-68,18,24,6);cx.fill();cx.fillStyle='#e8c050';cx.fillRect(-9,-47,18,4);cx.fillStyle='#fff6c0';cx.beginPath();cx.arc(0,-45,2.6,0,7);cx.fill(); // corpete e cinto
+  cx.fillStyle='#8a5a3a';cx.beginPath();cx.moveTo(-6,-68);cx.lineTo(6,-68);cx.lineTo(0,-58);cx.fill(); // decote
+  cx.fillStyle='#ffffff';cx.beginPath();cx.ellipse(-10,-62,6,5,0,0,7);cx.ellipse(10,-62,6,5,0,0,7);cx.fill(); // mangas
+  limb(8,-60,24,6,.5+sw*.1,'#7a4a2e','#5a3420');limb(-8,-60,24,6,-.3-sw*.1,'#7a4a2e','#5a3420'); // braços
+  cx.fillStyle='#e8c050';cx.beginPath();cx.arc(0,-66,9,.25,Math.PI-.25);cx.lineWidth=2;cx.strokeStyle='#e8c050';cx.stroke(); // colar
+  cx.fillStyle='#16100c';cx.beginPath();cx.arc(-2,-82,14,0,7);cx.arc(-12,-76,7,0,7);cx.arc(10,-84,6,0,7);cx.fill(); // cabelo
+  cx.fillStyle=rg(2,-80,2,14,['#8a5636','#5a3420']);cx.beginPath();cx.arc(1,-76,10,0,7);cx.fill(); // rosto
+  cx.fillStyle='#fff';cx.beginPath();cx.ellipse(5,-77,2.8,2,0,0,7);cx.fill();cx.fillStyle='#1a0f0a';cx.beginPath();cx.arc(5.8,-77,1.4,0,7);cx.fill(); // olho
+  cx.strokeStyle='#1a0f0a';cx.lineWidth=1.3;cx.beginPath();cx.moveTo(2,-81);cx.quadraticCurveTo(5,-83,8,-81);cx.stroke();
+  cx.fillStyle='#b03a52';cx.beginPath();cx.ellipse(7,-71.5,2.6,1.3,0,0,7);cx.fill(); // batom
+  cx.fillStyle='rgba(220,90,90,.3)';cx.beginPath();cx.arc(3,-73,2.6,0,7);cx.fill();
+  cx.fillStyle='#e8c050';cx.beginPath();cx.arc(-4,-70,1.8,0,7);cx.fill(); // brinco
+  cx.fillStyle=lg(-9,-100,9,-88,['#fff0a0','#d8a020']);cx.beginPath();cx.moveTo(-9,-88);cx.lineTo(-8,-99);cx.lineTo(-4,-93);cx.lineTo(0,-102);cx.lineTo(4,-93);cx.lineTo(8,-99);cx.lineTo(9,-88);cx.closePath();cx.fill(); // coroa
+  cx.fillStyle='#d03050';cx.beginPath();cx.arc(0,-92,1.6,0,7);cx.fill();cx.fillStyle='#4a8af0';cx.beginPath();cx.arc(-5,-91,1.2,0,7);cx.arc(5,-91,1.2,0,7);cx.fill();
+  cx.fillStyle='rgba(255,255,255,.8)';for(let i=0;i<4;i++){const a=t*.05+i*1.6;cx.fillRect(Math.cos(a)*30,-50+Math.sin(a*1.3)*40,2,2)} // brilhinhos
+  cx.restore();
+}
 function drawPortal(){
   const p=L.portal;if(!p)return;const col=FASES[fase].portal;
   brilho(col,30);for(let i=0;i<4;i++){cx.strokeStyle=col;cx.globalAlpha=.9-i*.2;cx.lineWidth=5;cx.beginPath();cx.ellipse(p.x,p.y-60,28-i*5+Math.sin(T*.1+i)*2,56-i*8,T*.02*(i%2?1:-1),0,7);cx.stroke()}
@@ -1742,6 +1814,7 @@ function drawCena(){
       cx.fillStyle=a.fogo?'#ff5a1a':'#aaa';cx.beginPath();cx.moveTo(12,-4);cx.lineTo(18,0);cx.lineTo(12,4);cx.fill();
     }
     cx.restore()});
+  if(L.rainha)drawRainha(L.rainha);
   drawHero();
   Pt.forEach(p=>{cx.globalAlpha=Math.min(1,p.l/20);cx.fillStyle=p.c;cx.fillRect(p.x,p.y,p.s,p.s)});cx.globalAlpha=1;
   if(w){cx.fillStyle='rgba(4,30,40,.42)';cx.fillRect(camX-60,GY+26,VW+120,400)}
